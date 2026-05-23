@@ -1,0 +1,2 @@
+# patches.txt — add patch paths here as the app evolves
+# Example: midhunatech.patches.v1_0.my_patch

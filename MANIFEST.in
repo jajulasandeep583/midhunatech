@@ -1,0 +1,2 @@
+include pyproject.toml
+recursive-include midhunatech *.json *.js *.css *.html *.py *.txt *.md *.svg *.png

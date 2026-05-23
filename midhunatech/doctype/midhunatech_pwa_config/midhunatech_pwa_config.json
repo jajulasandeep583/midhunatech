@@ -1,0 +1,85 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2024-01-01 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "app_name",
+  "col_break_1",
+  "theme_color",
+  "primary_color",
+  "section_modules",
+  "modules"
+ ],
+ "fields": [
+  {
+   "fieldname": "app_name",
+   "fieldtype": "Data",
+   "label": "App Name",
+   "reqd": 1,
+   "default": "Midhunatech",
+   "description": "Displayed on login screen and home header (text only, no image needed)"
+  },
+  {
+   "fieldname": "col_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "theme_color",
+   "fieldtype": "Color",
+   "label": "Theme Color",
+   "default": "#6366f1",
+   "description": "Browser address bar and PWA splash screen color"
+  },
+  {
+   "fieldname": "primary_color",
+   "fieldtype": "Color",
+   "label": "Primary UI Color",
+   "default": "#6366f1",
+   "description": "Buttons, active nav items, icon highlights"
+  },
+  {
+   "fieldname": "section_modules",
+   "fieldtype": "Section Break",
+   "label": "PWA Modules — What appears on the mobile home screen"
+  },
+  {
+   "fieldname": "modules",
+   "fieldtype": "Table",
+   "label": "Modules",
+   "options": "Midhunatech PWA Module",
+   "description": "Each row = one tile on the mobile home screen. Toggle Enabled to show/hide instantly."
+  }
+ ],
+ "icon": "smartphone",
+ "is_single": 1,
+ "issingle": 1,
+ "module": "Midhunatech",
+ "modified": "2024-01-01 00:00:00.000000",
+ "modified_by": "Administrator",
+ "name": "Midhunatech PWA Config",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 0,
+   "permlevel": 0
+  },
+  {
+   "role": "Administrator",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 0,
+   "permlevel": 0
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "track_changes": 1
+}

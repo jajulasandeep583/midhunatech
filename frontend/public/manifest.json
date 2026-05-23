@@ -1,0 +1,15 @@
+{
+  "name":             "Midhunatech",
+  "short_name":       "Midhunatech",
+  "description":      "Midhunatech — Configurable Frappe PWA",
+  "start_url":        "/midhunatech",
+  "scope":            "/midhunatech",
+  "display":          "standalone",
+  "orientation":      "portrait-primary",
+  "theme_color":      "#6366f1",
+  "background_color": "#ffffff",
+  "lang":             "en",
+  "icons":            [],
+  "prefer_related_applications": false,
+  "categories":       ["business", "productivity"]
+}

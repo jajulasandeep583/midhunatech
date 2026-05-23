@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+.eggs/
+*.egg
+
+# Node / Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Frappe build output (generated — do not commit)
+midhunatech/public/frontend/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Env
+.env
+.env.local

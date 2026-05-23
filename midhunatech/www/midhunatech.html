@@ -1,0 +1,58 @@
+{%- extends "templates/web.html" -%}
+{%- block title %}{{ pwa_app_name }}{%- endblock -%}
+
+{%- block head_include %}
+{# ── PWA meta tags ────────────────────────────────────────────────────────── #}
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="{{ pwa_app_name }}">
+<meta name="theme-color" content="{{ pwa_theme_color }}">
+
+{# ── PWA manifest ─────────────────────────────────────────────────────────── #}
+<link rel="manifest" href="/assets/midhunatech/frontend/manifest.json">
+
+{# ── App CSS bundle (produced by vite build) ──────────────────────────────── #}
+<link rel="stylesheet" href="/assets/midhunatech/frontend/index.css">
+{%- endblock -%}
+
+{%- block page_content %}
+{# Mount point for Vue app #}
+<div id="app"></div>
+
+{#
+  Inject server-side data as window.__MT__ so Vue can read it without
+  an extra API call on first load. Same pattern as HRMS frontend/index.html.
+#}
+<script>
+window.__MT__ = {
+  csrf:          {{ csrf_token         | tojson }},
+  user:          {{ session_user       | tojson }},
+  fullname:      {{ session_fname      | tojson }},
+  app_name:      {{ pwa_app_name       | tojson }},
+  theme_color:   {{ pwa_theme_color    | tojson }},
+  primary_color: {{ pwa_primary_color  | tojson }},
+  site_name:     {{ site_name          | tojson }},
+  site_url:      window.location.origin
+};
+</script>
+
+{# ── App JS bundle (produced by vite build) ───────────────────────────────── #}
+<script type="module" src="/assets/midhunatech/frontend/index.js"></script>
+{%- endblock -%}
+
+{%- block style %}
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    height: 100%;
+    background: #f1f5f9;
+    overflow: hidden;          /* Ionic handles its own scroll */
+    overscroll-behavior: none; /* prevents iOS bounce on body */
+  }
+  #app { height: 100%; }
+  /* Hide Frappe default nav/header — PWA has its own */
+  .navbar, .page-head, .footer-toolbar { display: none !important; }
+</style>
+{%- endblock -%}

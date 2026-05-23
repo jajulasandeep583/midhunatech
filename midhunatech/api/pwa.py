@@ -1,0 +1,137 @@
+# Copyright (c) 2024, Midhunatech and Contributors
+# License: GPL-3.0
+
+import frappe
+from frappe import _
+
+
+# ── Boot injection ─────────────────────────────────────────────────────────────
+
+def extend_boot(bootinfo):
+    """
+    Called by Frappe v16 extend_bootinfo hook on every authenticated page load.
+    Injects minimal PWA config into window.frappe.boot so the desk knows
+    the app exists. The full config is fetched lazily by the PWA frontend.
+    """
+    if frappe.session.user == "Guest":
+        return
+    try:
+        cfg = frappe.get_cached_doc("Midhunatech PWA Config")
+        bootinfo.mt_config = {
+            "app_name":      cfg.app_name      or "Midhunatech",
+            "theme_color":   cfg.theme_color   or "#6366f1",
+            "primary_color": cfg.primary_color or "#6366f1",
+        }
+    except Exception:
+        bootinfo.mt_config = {
+            "app_name": "Midhunatech",
+            "theme_color": "#6366f1",
+            "primary_color": "#6366f1",
+        }
+
+
+def get_pwa_boot_context():
+    """
+    Jinja method — called from www/midhunatech.html template.
+    Returns a dict that gets injected as window.__MT__ in the HTML.
+    """
+    out = {
+        "csrf":          frappe.session.data.csrf_token if frappe.session.user != "Guest" else "",
+        "user":          frappe.session.user,
+        "fullname":      frappe.utils.get_fullname(frappe.session.user) if frappe.session.user != "Guest" else "",
+        "app_name":      "Midhunatech",
+        "theme_color":   "#6366f1",
+        "primary_color": "#6366f1",
+        "site_name":     frappe.local.site,
+    }
+    if frappe.session.user != "Guest":
+        try:
+            cfg = frappe.get_cached_doc("Midhunatech PWA Config")
+            out["app_name"]      = cfg.app_name      or "Midhunatech"
+            out["theme_color"]   = cfg.theme_color   or "#6366f1"
+            out["primary_color"] = cfg.primary_color or "#6366f1"
+        except Exception:
+            pass
+    return out
+
+
+# ── App-screen permission check ────────────────────────────────────────────────
+
+def check_app_permission():
+    """
+    Called by add_to_apps_screen has_permission hook.
+    Returns True for any logged-in user.
+    """
+    if frappe.session.user == "Guest":
+        return False
+    return True
+
+
+# ── Whitelisted API methods ────────────────────────────────────────────────────
+
+@frappe.whitelist()
+def get_config():
+    """
+    Returns the full PWA configuration: branding + ordered enabled modules.
+    Called by the Vue frontend once per session after login.
+    Requires authentication (no allow_guest).
+    """
+    cfg     = frappe.get_cached_doc("Midhunatech PWA Config")
+    user    = frappe.get_cached_doc("User", frappe.session.user)
+    roles   = [r.role for r in user.get("roles", [])]
+
+    modules = []
+    for row in cfg.get("modules", []):
+        if not row.is_enabled:
+            continue
+        modules.append({
+            "name":   row.module_name,
+            "label":  row.label,
+            "icon":   row.icon   or "grid",
+            "color":  row.color  or "#6366f1",
+            "route":  row.route_path,
+            "type":   row.module_type,        # frappe_page | iframe_url | custom_view
+            "url":    row.target_url or "",
+            "order":  int(row.display_order or 0),
+        })
+
+    modules.sort(key=lambda x: x["order"])
+
+    return {
+        "app_name":      cfg.app_name      or "Midhunatech",
+        "theme_color":   cfg.theme_color   or "#6366f1",
+        "primary_color": cfg.primary_color or "#6366f1",
+        "modules":       modules,
+        "user":          frappe.session.user,
+        "fullname":      user.full_name or frappe.session.user,
+        "email":         user.email or "",
+        "user_image":    user.user_image or "",
+        "roles":         roles,
+        "is_system_manager": "System Manager" in roles or "Administrator" in roles,
+    }
+
+
+@frappe.whitelist(allow_guest=True)
+def get_public_config():
+    """
+    Returns minimal branding used on the Login screen.
+    No authentication required — called before the user logs in.
+    """
+    try:
+        cfg = frappe.get_cached_doc("Midhunatech PWA Config")
+        return {
+            "app_name":    cfg.app_name    or "Midhunatech",
+            "theme_color": cfg.theme_color or "#6366f1",
+        }
+    except Exception:
+        return {"app_name": "Midhunatech", "theme_color": "#6366f1"}
+
+
+@frappe.whitelist()
+def get_notifications():
+    """Returns unread notification count for badge display."""
+    count = frappe.db.count(
+        "Notification Log",
+        filters={"for_user": frappe.session.user, "read": 0},
+    )
+    return {"unread": int(count or 0)}

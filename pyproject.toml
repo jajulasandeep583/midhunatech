@@ -1,0 +1,24 @@
+[project]
+name = "midhunatech"
+authors = [{ name = "Midhunatech", email = "admin@midhunatech.com" }]
+description = "Midhunatech — Configurable PWA on Frappe Framework v16"
+requires-python = ">=3.10"
+readme = "README.md"
+license = { text = "GPL-3.0" }
+dynamic = ["version"]
+dependencies = []
+
+[project.urls]
+Homepage   = "https://github.com/midhunatech/midhunatech"
+Repository = "https://github.com/midhunatech/midhunatech"
+Issues     = "https://github.com/midhunatech/midhunatech/issues"
+
+[tool.frappe]
+frappe_version = ">=16.0.0"
+
+[build-system]
+requires      = ["flit_core >=3.4,<4"]
+build-backend = "flit_core.buildapi"
+
+[tool.flit.module]
+name = "midhunatech"

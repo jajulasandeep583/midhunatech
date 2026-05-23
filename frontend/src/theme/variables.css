@@ -1,0 +1,76 @@
+/* Midhunatech PWA — Ionic CSS variable overrides */
+/* Copyright (c) 2024, Midhunatech and Contributors — GPL-3.0 */
+
+:root {
+  /* ── Primary: indigo ──────────────────────────────────────────────────── */
+  --ion-color-primary:          #6366f1;
+  --ion-color-primary-rgb:      99, 102, 241;
+  --ion-color-primary-contrast: #ffffff;
+  --ion-color-primary-shade:    #575ad4;
+  --ion-color-primary-tint:     #7375f3;
+
+  /* ── Success: green ───────────────────────────────────────────────────── */
+  --ion-color-success:          #22c55e;
+  --ion-color-success-contrast: #ffffff;
+  --ion-color-success-shade:    #1eae53;
+  --ion-color-success-tint:     #38cb6e;
+
+  /* ── Warning: amber ───────────────────────────────────────────────────── */
+  --ion-color-warning:          #f59e0b;
+  --ion-color-warning-contrast: #000000;
+  --ion-color-warning-shade:    #d88b0a;
+  --ion-color-warning-tint:     #f6a823;
+
+  /* ── Danger: red ──────────────────────────────────────────────────────── */
+  --ion-color-danger:           #ef4444;
+  --ion-color-danger-contrast:  #ffffff;
+  --ion-color-danger-shade:     #d23c3c;
+  --ion-color-danger-tint:      #f15757;
+
+  /* ── Medium / light ───────────────────────────────────────────────────── */
+  --ion-color-medium:           #94a3b8;
+  --ion-color-medium-rgb:       148, 163, 184;
+  --ion-color-medium-contrast:  #000000;
+  --ion-color-medium-shade:     #829099;
+  --ion-color-medium-tint:      #9eadbf;
+
+  --ion-color-light:            #f8fafc;
+  --ion-color-light-rgb:        248, 250, 252;
+  --ion-color-light-contrast:   #1e293b;
+  --ion-color-light-shade:      #dae0e9;
+  --ion-color-light-tint:       #f9fbfc;
+
+  /* ── App surfaces ─────────────────────────────────────────────────────── */
+  --ion-background-color:     #f1f5f9;
+  --ion-background-color-rgb: 241, 245, 249;
+  --ion-text-color:           #1e293b;
+  --ion-text-color-rgb:       30, 41, 59;
+  --ion-card-background:      #ffffff;
+
+  /* ── Toolbar ──────────────────────────────────────────────────────────── */
+  --ion-toolbar-background:    #ffffff;
+  --ion-toolbar-color:         #1e293b;
+  --ion-toolbar-border-color:  #e2e8f0;
+
+  /* ── Tab bar ──────────────────────────────────────────────────────────── */
+  --ion-tab-bar-background:    #ffffff;
+  --ion-tab-bar-border-color:  #e2e8f0;
+  --ion-tab-bar-color:         #94a3b8;
+  --ion-tab-bar-color-selected: #6366f1;
+
+  /* ── Item ─────────────────────────────────────────────────────────────── */
+  --ion-item-background:     #ffffff;
+  --ion-item-border-color:   #f1f5f9;
+
+  /* ── Font ─────────────────────────────────────────────────────────────── */
+  --ion-font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display",
+                     "Segoe UI", Roboto, sans-serif;
+}
+
+/* ── Component overrides ──────────────────────────────────────────────────── */
+ion-card   { border-radius: 14px; box-shadow: 0 1px 4px rgba(0,0,0,.06); margin: 0; }
+ion-toolbar { --border-width: 0 0 1px 0; --padding-top: env(safe-area-inset-top); }
+ion-tab-bar { height: 56px; padding-bottom: env(safe-area-inset-bottom); }
+ion-button  { --border-radius: 12px; font-weight: 600; letter-spacing: 0; }
+ion-item    { --border-radius: 10px; --padding-start: 16px; --inner-padding-end: 16px; }
+ion-skeleton-text { --background: #e2e8f0; --background-rgb: 226,232,240; }
