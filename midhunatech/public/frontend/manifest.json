@@ -1,15 +1,36 @@
 {
+  "id":               "/midhunatech",
   "name":             "Midhunatech",
   "short_name":       "Midhunatech",
-  "description":      "Midhunatech — Configurable Frappe PWA",
+  "description":      "Midhunatech — Configurable Frappe / ERPNext PWA",
   "start_url":        "/midhunatech",
   "scope":            "/midhunatech",
   "display":          "standalone",
+  "display_override": ["standalone", "minimal-ui"],
   "orientation":      "portrait-primary",
   "theme_color":      "#6366f1",
   "background_color": "#ffffff",
   "lang":             "en",
-  "icons":            [],
+  "dir":              "ltr",
+  "icons": [
+    { "src": "/assets/midhunatech/frontend/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/assets/midhunatech/frontend/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/assets/midhunatech/frontend/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    {
+      "name": "Check in / out",
+      "short_name": "Check in",
+      "url": "/midhunatech/checkin",
+      "icons": [{ "src": "/assets/midhunatech/frontend/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Profile",
+      "short_name": "Profile",
+      "url": "/midhunatech/profile",
+      "icons": [{ "src": "/assets/midhunatech/frontend/icon-192.png", "sizes": "192x192" }]
+    }
+  ],
   "prefer_related_applications": false,
-  "categories":       ["business", "productivity"]
+  "categories": ["business", "productivity"]
 }

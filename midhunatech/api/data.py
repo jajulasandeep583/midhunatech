@@ -160,9 +160,20 @@ def get_view(doctype, label=None):
         "date_field":   date_field,
         "date_label":   (meta.get_field(date_field).label if meta.get_field(date_field) else "Date"),
         "fields":       fields_meta,
-        "can_create":   bool(frappe.has_permission(doctype, "create")),
+        "can_create":   _can_create_native(doctype, meta),
         "cards":        _cards(doctype, meta, status_field, date_field),
     }
+
+
+def _can_create_native(doctype, meta):
+    """True only if the user can create AND the doctype has no required child
+    table (line items) — so the native "+" never leads to a dead end."""
+    if not frappe.has_permission(doctype, "create"):
+        return False
+    for df in meta.fields:
+        if df.fieldtype in ("Table", "Table MultiSelect") and df.reqd:
+            return False
+    return True
 
 
 def _cards(doctype, meta, status_field, date_field):
