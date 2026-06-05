@@ -45,6 +45,39 @@ def before_migrate():
     pass
 
 
+def after_migrate():
+    """Runs after every `bench migrate` (i.e. after each app update on a site).
+    Converges the default tiles to the native UI so a site updating from an older
+    version stops opening the ERPNext desk and matches the latest app."""
+    try:
+        ensure_native_modules()
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "midhunatech: ensure_native_modules failed")
+
+
+def ensure_native_modules():
+    """Convert the DEFAULT tiles from the legacy frappe_page (desk iframe) type to
+    native doc_list. Scoped to known module keys only — custom/user tiles (e.g. a
+    SCADA web page) are left untouched. Idempotent."""
+    keymap = {m[1]: m[5] for m in NATIVE_MODULES}   # module_name -> doctype
+    cfg = frappe.get_single("Midhunatech PWA Config")
+    changed = 0
+    for row in cfg.get("modules", []):
+        doctype = keymap.get(row.module_name)
+        if not doctype or row.module_type == "doc_list":
+            continue
+        if not frappe.db.exists("DocType", doctype):
+            continue
+        row.module_type = "doc_list"
+        row.target_url = doctype
+        changed += 1
+    if changed:
+        cfg.save(ignore_permissions=True)
+        frappe.db.commit()
+    print(f"ensure_native_modules: converted {changed} legacy tile(s) to native")
+    return changed
+
+
 def seed_default_modules():
     """Idempotently add the default native modules to the PWA Config.
     Safe to re-run (e.g. after installing ERPNext/HRMS later):

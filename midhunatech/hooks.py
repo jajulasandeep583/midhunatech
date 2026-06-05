@@ -46,6 +46,7 @@ extend_bootinfo = "midhunatech.api.pwa.extend_boot"
 # ── Installation hooks ─────────────────────────────────────────────────────────
 after_install  = "midhunatech.install.after_install"
 before_migrate = "midhunatech.install.before_migrate"
+after_migrate  = "midhunatech.install.after_migrate"
 
 # ── Jinja ─────────────────────────────────────────────────────────────────────
 jinja = {
