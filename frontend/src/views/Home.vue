@@ -6,7 +6,10 @@
     <ion-header :translucent="true">
       <ion-toolbar>
         <div slot="start" style="padding-left:14px;">
-          <span class="mt-wordmark">Midhuna<span class="accent">tech</span></span>
+          <span v-if="appConfig.app_name && appConfig.app_name !== 'Midhunatech'" class="mt-wordmark">
+            {{ appConfig.app_name }}
+          </span>
+          <span v-else class="mt-wordmark">Midhuna<span class="accent">tech</span></span>
         </div>
         <div slot="end" style="padding-right:14px;">
           <div
@@ -44,7 +47,7 @@
       </ion-refresher>
 
       <!-- ── ATTENDANCE / CHECK-IN CARD ── -->
-      <div class="ci-wrap">
+      <div v-if="appConfig.show_attendance" class="ci-wrap">
         <div class="ci-card" :class="{ 'ci-active': checkin.checked_in }">
           <!-- date row -->
           <div class="ci-toprow">
@@ -233,7 +236,12 @@ const ICON_MAP = {
   shield: "🛡️", heart: "❤️", mail: "✉️", phone: "📞", home: "🏠",
   "trend-up": "📈", task: "✔️", report: "📑", grid: "⊞",
 };
-function iconChar(name) { return ICON_MAP[name] || "⊞"; }
+function iconChar(name) {
+  if (!name) return "⊞";
+  if (ICON_MAP[name]) return ICON_MAP[name];
+  // emojis (or any non-ascii char) pass through untouched
+  return /[^\x00-\x7F]/.test(name) ? name : "⊞";
+}
 </script>
 
 <style scoped>

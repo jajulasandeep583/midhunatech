@@ -90,7 +90,7 @@ def get_config():
             "label":  row.label,
             "icon":   row.icon   or "grid",
             "color":  row.color  or "#6366f1",
-            "route":  row.route_path,
+            "route":  row.get("route_path"),
             "type":   row.module_type,        # frappe_page | iframe_url | custom_view
             "url":    row.target_url or "",
             "order":  int(row.display_order or 0),
@@ -98,10 +98,15 @@ def get_config():
 
     modules.sort(key=lambda x: x["order"])
 
+    # missing/never-saved value counts as ON so older sites keep the feature
+    show_attendance = cfg.get("show_attendance")
+    show_attendance = 1 if show_attendance is None else int(show_attendance)
+
     return {
         "app_name":      cfg.app_name      or "Midhunatech",
         "theme_color":   cfg.theme_color   or "#6366f1",
         "primary_color": cfg.primary_color or "#6366f1",
+        "show_attendance": show_attendance,
         "modules":       modules,
         "user":          frappe.session.user,
         "fullname":      user.full_name or frappe.session.user,

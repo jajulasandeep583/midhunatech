@@ -8,7 +8,7 @@
           <ion-icon :icon="homeOutline" aria-hidden="true" />
           <ion-label>Home</ion-label>
         </ion-tab-button>
-        <ion-tab-button tab="checkin" href="/midhunatech/checkin">
+        <ion-tab-button v-if="appConfig.show_attendance" tab="checkin" href="/midhunatech/checkin">
           <ion-icon :icon="timeOutline" aria-hidden="true" />
           <ion-label>Attendance</ion-label>
         </ion-tab-button>
@@ -27,4 +27,5 @@ import {
   IonIcon, IonLabel, IonRouterOutlet,
 } from "@ionic/vue";
 import { homeOutline, personOutline, timeOutline } from "ionicons/icons";
+import { appConfig } from "@/data/session.js";
 </script>

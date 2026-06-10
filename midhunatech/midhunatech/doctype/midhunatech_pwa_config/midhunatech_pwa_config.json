@@ -15,6 +15,7 @@
   "accent_color",
   "section_features",
   "bottom_nav_enabled",
+  "show_attendance",
   "splash_screen_enabled",
   "col_break_feat",
   "offline_mode_enabled",
@@ -79,6 +80,13 @@
    "fieldtype": "Check",
    "label": "Bottom Navigation Bar",
    "default": "1"
+  },
+  {
+   "fieldname": "show_attendance",
+   "fieldtype": "Check",
+   "label": "Attendance / Check-in",
+   "default": "1",
+   "description": "Show the check-in card on Home and the Attendance tab. Turn off for a webpages-only app."
   },
   {
    "fieldname": "splash_screen_enabled",

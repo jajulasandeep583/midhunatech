@@ -22,6 +22,7 @@ export const appConfig = reactive({
   app_name:      boot.app_name      || "Midhunatech",
   theme_color:   boot.theme_color   || "#6366f1",
   primary_color: boot.primary_color || "#6366f1",
+  show_attendance: 1,
   modules:  [],
   loaded:   false,
   error:    null,
@@ -141,6 +142,7 @@ export async function loadConfig(force = false) {
     appConfig.app_name      = c.app_name;
     appConfig.theme_color   = c.theme_color;
     appConfig.primary_color = c.primary_color;
+    appConfig.show_attendance = c.show_attendance == null ? 1 : Number(c.show_attendance);
     appConfig.modules       = c.modules || [];
     appConfig.loaded        = true;
     appConfig.error         = null;
