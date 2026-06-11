@@ -38,8 +38,8 @@ async function callPost(method, body = {}) {
   return (await r.json()).message;
 }
 
-export const getView = (doctype, label) =>
-  call("midhunatech.api.data.get_view", { doctype, label });
+export const getView = (doctype, label, fields, filters) =>
+  call("midhunatech.api.data.get_view", { doctype, label, fields, filters });
 
 export const getDashboard = (target) =>
   call("midhunatech.api.data.get_dashboard", { target });
@@ -53,11 +53,11 @@ export const searchLink = (doctype, txt) =>
 export const createDoc = (doctype, values) =>
   callPost("midhunatech.api.data.create_doc", { doctype, values: JSON.stringify(values) });
 
-export const getList = (doctype, { search, start, page_length } = {}) =>
-  call("midhunatech.api.data.get_list", { doctype, search, start, page_length });
+export const getList = (doctype, { search, start, page_length, fields, filters } = {}) =>
+  call("midhunatech.api.data.get_list", { doctype, search, start, page_length, fields, filters });
 
-export const getDoc = (doctype, name) =>
-  call("midhunatech.api.data.get_doc", { doctype, name });
+export const getDoc = (doctype, name, fields) =>
+  call("midhunatech.api.data.get_doc", { doctype, name, fields });
 
 // Map a status string to a soft badge palette (works for any doctype)
 export function badgeClass(status) {

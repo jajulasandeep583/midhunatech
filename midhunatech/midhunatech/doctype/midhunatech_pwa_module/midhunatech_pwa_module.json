@@ -89,8 +89,8 @@
    "fieldname": "module_type",
    "fieldtype": "Select",
    "label": "Module Type",
-   "options": "doctype\nlist_view\nform_view\nreport\nnumber_card\ndashboard\nwebpage\ncustom_html\nurl\ndoc_list\nfrappe_page\niframe_url\ncustom_view",
-   "default": "doctype",
+   "options": "doc_list\nreport\ndashboard\niframe_url\ncustom_view\ndoctype\nlist_view\nform_view\nnumber_card\nwebpage\ncustom_html\nurl\nfrappe_page",
+   "default": "doc_list",
    "reqd": 1,
    "in_list_view": 1
   },
@@ -118,21 +118,24 @@
    "fieldtype": "Link",
    "options": "DocType",
    "label": "DocType",
-   "depends_on": "eval:['doctype','list_view','form_view'].includes(doc.module_type)"
+   "depends_on": "eval:['doc_list','doctype','list_view','form_view'].includes(doc.module_type)",
+   "description": "The doctype this tile lists, e.g. Sales Invoice"
   },
   {
    "fieldname": "doctype_filters",
    "fieldtype": "Code",
    "options": "JSON",
    "label": "Filters (JSON)",
-   "depends_on": "eval:['doctype','list_view'].includes(doc.module_type)"
+   "depends_on": "eval:['doc_list','doctype','list_view'].includes(doc.module_type)",
+   "description": "Optional list filters, e.g. {\"status\": \"Unpaid\"}"
   },
   {
    "fieldname": "doctype_fields",
    "fieldtype": "Code",
    "options": "JSON",
    "label": "Fields (JSON array)",
-   "depends_on": "eval:['doctype','list_view'].includes(doc.module_type)"
+   "depends_on": "eval:['doc_list','doctype','list_view'].includes(doc.module_type)",
+   "description": "Fields shown on list cards & detail, e.g. [\"customer\", \"posting_date\", \"grand_total\"]. Blank = automatic"
   },
   {
    "fieldname": "report_name",

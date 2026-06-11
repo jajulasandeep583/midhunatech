@@ -46,7 +46,8 @@ def compute_target_url(m):
     if t in ("doctype", "list_view"):
         return f"#list/{dt}" if dt else existing
     if t == "doc_list":
-        return existing or (dt or "")
+        # the doctype IS the target — prefer the explicit DocType field
+        return (dt or "") or existing
     if t == "form_view":
         return f"/app/{scrub(dt)}/new" if dt else existing
     if t == "report":

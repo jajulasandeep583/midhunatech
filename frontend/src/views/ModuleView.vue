@@ -14,7 +14,7 @@
         <ion-title>{{ currentMod?.label || "Loading…" }}</ion-title>
         <!-- Open in new tab — useful for frappe_page / iframe_url only -->
         <ion-buttons
-          v-if="currentMod?.url && (currentMod.type === 'frappe_page' || currentMod.type === 'iframe_url')"
+          v-if="currentMod?.url && kind === 'iframe_url'"
           slot="end"
         >
           <ion-button @click="openExternal" aria-label="Open in browser">
@@ -28,7 +28,7 @@
 
       <!-- Pull to refresh — native doc_list only -->
       <ion-refresher
-        v-if="currentMod && ['doc_list', 'dashboard', 'report', 'custom_view'].includes(currentMod.type)"
+        v-if="currentMod && ['doc_list', 'dashboard', 'report', 'custom_view'].includes(kind)"
         slot="fixed"
         @ionRefresh="onDocRefresh"
       >
@@ -51,8 +51,15 @@
         </ion-button>
       </div>
 
-      <!-- ── IFRAME: frappe_page or iframe_url ── -->
-      <template v-else-if="currentMod.type === 'frappe_page' || currentMod.type === 'iframe_url'">
+      <!-- ── Tile misconfigured (e.g. doc_list with no DocType) ── -->
+      <div v-else-if="kind === 'doc_list' && !listDoctype" class="empty-state" style="padding-top:80px;" role="alert">
+        <div class="empty-icon" aria-hidden="true">⚙️</div>
+        <h3>{{ currentMod.label }} is not configured</h3>
+        <p>Set the <b>DocType</b> field on this tile in PWA App Config, then save.</p>
+      </div>
+
+      <!-- ── IFRAME: frappe_page / iframe_url / webpage / url / form_view ── -->
+      <template v-else-if="kind === 'iframe_url'">
         <!-- Loading overlay until iframe fires @load -->
         <div v-if="!iframeReady" class="iframe-overlay">
           <ion-spinner name="crescent" color="primary" style="font-size:36px;" />
@@ -70,24 +77,26 @@
 
       <!-- ── NATIVE DOC LIST: one generic UI for any doctype ── -->
       <DocList
-        v-else-if="currentMod.type === 'doc_list'"
+        v-else-if="kind === 'doc_list'"
         ref="docListRef"
-        :key="currentMod.url"
-        :doctype="currentMod.url"
+        :key="listDoctype"
+        :doctype="listDoctype"
         :label="currentMod.label"
+        :fields="currentMod.fields || ''"
+        :filters="currentMod.filters || ''"
       />
 
       <!-- ── KPI DASHBOARD: Frappe Number Cards ── -->
       <DashboardView
-        v-else-if="currentMod.type === 'dashboard'"
+        v-else-if="kind === 'dashboard'"
         ref="docListRef"
-        :key="currentMod.url"
-        :target="currentMod.url"
+        :key="dashTarget"
+        :target="dashTarget"
       />
 
       <!-- ── NATIVE REPORT: any Frappe report as a mobile table ── -->
       <ReportView
-        v-else-if="currentMod.type === 'report'"
+        v-else-if="kind === 'report'"
         ref="docListRef"
         :key="currentMod.report || currentMod.url"
         :report="currentMod.report || currentMod.url"
@@ -95,7 +104,7 @@
       />
 
       <!-- ── CUSTOM VIEW: dynamic Vue component ── -->
-      <Suspense v-else-if="currentMod.type === 'custom_view'">
+      <Suspense v-else-if="kind === 'custom_view'">
         <!-- Loaded component -->
         <component :is="dynComponent" v-if="dynComponent" />
         <!-- No component file found yet -->
@@ -114,6 +123,13 @@
           </div>
         </template>
       </Suspense>
+
+      <!-- ── Unknown module type ── -->
+      <div v-else class="empty-state" style="padding-top:80px;" role="alert">
+        <div class="empty-icon" aria-hidden="true">⚠</div>
+        <h3>{{ currentMod.label }}</h3>
+        <p>Module type "{{ currentMod.type }}" is not supported by this app.</p>
+      </div>
 
     </ion-content>
   </ion-page>
@@ -147,6 +163,33 @@ const currentMod = computed(() =>
   appConfig.modules.find(m => m.name === slug.value) || null
 );
 
+// Normalize every configured module_type to one of the 5 renderers, so
+// legacy/vanilla types (doctype, list_view, webpage, url, …) work too.
+const kind = computed(() => {
+  const t = currentMod.value?.type;
+  if (t === "doctype" || t === "list_view") return "doc_list";
+  if (t === "webpage" || t === "url" || t === "form_view" || t === "frappe_page"
+      || t === "iframe_url") return "iframe_url";
+  if (t === "number_card") return "dashboard";
+  return t;
+});
+
+// doctype for list tiles — server resolves it, fall back to target_url
+const listDoctype = computed(() => {
+  const m = currentMod.value || {};
+  let dt = m.doctype || m.url || "";
+  if (dt.startsWith("#list/")) dt = dt.slice(6);
+  return dt;
+});
+
+// dashboard target — strip the vanilla-app prefixes
+const dashTarget = computed(() => {
+  const u = currentMod.value?.url || "";
+  if (u.startsWith("#card/")) return u.slice(6);
+  if (u === "#dashboard") return "";
+  return u;
+});
+
 // optional default filters for report modules (JSON string in config)
 const parsedReportFilters = computed(() => {
   try { return JSON.parse(currentMod.value?.report_filters || "{}"); }
@@ -167,7 +210,7 @@ const compFilename = computed(() =>
 
 // Dynamically import the Vue component for custom_view type
 const dynComponent = computed(() => {
-  if (currentMod.value?.type !== "custom_view") return null;
+  if (kind.value !== "custom_view") return null;
   const name = compFilename.value;
   return defineAsyncComponent({
     loader:          () => import(`../views/modules/${name}.vue`),

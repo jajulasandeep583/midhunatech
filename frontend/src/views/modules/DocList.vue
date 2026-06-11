@@ -135,6 +135,9 @@ import DocForm from "@/views/modules/DocForm.vue";
 const props = defineProps({
   doctype: { type: String, required: true },
   label:   { type: String, default: "" },
+  // tile-configured display fields (JSON array string) + list filters (JSON dict string)
+  fields:  { type: String, default: "" },
+  filters: { type: String, default: "" },
 });
 
 const view = reactive({ label: props.label, cards: [], doctype: props.doctype });
@@ -161,8 +164,9 @@ async function reload() {
   start = 0;
   try {
     const [v, l] = await Promise.all([
-      getView(props.doctype, props.label),
-      getList(props.doctype, { search: search.value, start: 0, page_length: 20 }),
+      getView(props.doctype, props.label, props.fields, props.filters),
+      getList(props.doctype, { search: search.value, start: 0, page_length: 20,
+                               fields: props.fields, filters: props.filters }),
     ]);
     Object.assign(view, v);
     rows.value = l.rows;
@@ -180,7 +184,8 @@ async function onSearch(val) {
   start = 0;
   loading.value = true;
   try {
-    const l = await getList(props.doctype, { search: search.value, start: 0, page_length: 20 });
+    const l = await getList(props.doctype, { search: search.value, start: 0, page_length: 20,
+                                             fields: props.fields, filters: props.filters });
     rows.value = l.rows;
     hasMore.value = l.has_more;
     start = l.rows.length;
@@ -194,7 +199,8 @@ async function onSearch(val) {
 
 async function loadMore(ev) {
   try {
-    const l = await getList(props.doctype, { search: search.value, start, page_length: 20 });
+    const l = await getList(props.doctype, { search: search.value, start, page_length: 20,
+                                             fields: props.fields, filters: props.filters });
     rows.value.push(...l.rows);
     hasMore.value = l.has_more;
     start += l.rows.length;
@@ -206,7 +212,7 @@ async function open(row) {
   detailLoading.value = true;
   detail.value = { title: row.title, status: row.badge, fields: [] };
   try {
-    detail.value = await getDoc(props.doctype, row.name);
+    detail.value = await getDoc(props.doctype, row.name, props.fields);
   } catch (e) {
     detail.value = { title: row.title, status: row.badge,
       fields: [{ label: "Error", value: e.message }] };

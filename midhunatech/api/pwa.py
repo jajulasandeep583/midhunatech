@@ -96,6 +96,15 @@ def get_config():
     for row in cfg.get("modules", []):
         if not row.is_enabled:
             continue
+        url = row.target_url or ""
+        # resolve the doctype for list-type tiles regardless of which field
+        # the admin filled (DocType field, legacy target_url, "#list/..." rows)
+        doctype = row.get("doctype_name") or ""
+        if not doctype:
+            if url.startswith("#list/"):
+                doctype = url[6:]
+            elif row.module_type == "doc_list":
+                doctype = url
         modules.append({
             "name":   row.module_name,
             "label":  row.label,
@@ -103,8 +112,11 @@ def get_config():
             "color":  row.color  or "#6366f1",
             "route":  row.get("route_path"),
             "type":   row.module_type,        # frappe_page | iframe_url | custom_view | doc_list | dashboard | report
-            "url":    row.target_url or "",
+            "url":    url,
             "order":  int(row.display_order or 0),
+            "doctype": doctype,
+            "fields":  row.get("doctype_fields"),
+            "filters": row.get("doctype_filters"),
             "report": row.get("report_name"),
             "report_filters": row.get("report_filters"),
             "badge_method": row.get("badge_count_method"),

@@ -233,3 +233,91 @@ def seed_number_cards():
 # Backwards-compatible alias
 def seed_demo_modules():
     return seed_default_modules()
+
+
+def doctor():
+    """Production health check. Run on any site:
+        bench --site <site> execute midhunatech.install.doctor
+    Prints PASS/FAIL per check with the exact fix for each failure."""
+    import os
+
+    okc, fail = [], []
+
+    def check(label, cond, fix=""):
+        (okc if cond else fail).append((label, fix))
+        print(("  [OK]   " if cond else "  [FAIL] ") + label + ("" if cond else f"\n         FIX: {fix}"))
+
+    print(f"midhunatech doctor — site: {frappe.local.site}\n")
+
+    # 1. built frontend exists inside the app
+    app_index = frappe.get_app_path("midhunatech", "public", "frontend", "index.js")
+    check("Built frontend bundle exists (app)", os.path.exists(app_index),
+          "git pull in apps/midhunatech (the build is committed); never delete public/frontend")
+
+    # 2. assets are exposed under sites/assets (nginx serves THIS path in production)
+    assets_index = os.path.join(frappe.utils.get_bench_path(), "sites", "assets",
+                                "midhunatech", "frontend", "index.js")
+    check("Assets linked under sites/assets (served by nginx)", os.path.exists(assets_index),
+          "run: bench build --app midhunatech   (creates the assets symlink) then bench restart")
+
+    # 3. app installed on this site
+    installed = "midhunatech" in frappe.get_installed_apps()
+    check("App installed on this site", installed,
+          "bench --site {} install-app midhunatech".format(frappe.local.site))
+
+    # 4. config + tiles sanity
+    try:
+        cfg = frappe.get_single("Midhunatech PWA Config")
+        rows = cfg.get("modules", [])
+        check("PWA Config has tiles", bool(rows),
+              "bench --site {} execute midhunatech.install.seed_default_modules".format(frappe.local.site))
+        enabled = [r for r in rows if r.is_enabled]
+        check("At least one tile is Enabled", bool(enabled),
+              "tick 'Enabled' on tiles in /app/midhunatech-pwa-config")
+        for r in enabled:
+            if r.module_type in ("doc_list", "doctype", "list_view"):
+                dt = r.get("doctype_name") or (r.target_url or "").replace("#list/", "")
+                check(f"Tile '{r.label}' has a DocType", bool(dt),
+                      f"set the DocType field on tile '{r.label}'")
+                if dt:
+                    check(f"Tile '{r.label}' doctype exists: {dt}", bool(frappe.db.exists("DocType", dt)),
+                          f"fix the DocType on tile '{r.label}' — '{dt}' is not on this site")
+            if r.module_type == "report" and r.get("report_name"):
+                check(f"Tile '{r.label}' report exists", bool(frappe.db.exists("Report", r.report_name)),
+                      f"report '{r.report_name}' missing — is ERPNext installed?")
+    except Exception as e:
+        check("PWA Config readable", False, f"error: {e} — run bench --site <s> migrate")
+
+    # 5. DB Script Reports need server scripts enabled in COMMON config
+    has_db_script = bool(frappe.db.exists("Report", {"report_type": "Script Report", "is_standard": "No"}))
+    if has_db_script:
+        check("server_script_enabled for DB Script Reports",
+              bool(frappe.get_common_site_config().get("server_script_enabled")),
+              "add \"server_script_enabled\": 1 to sites/common_site_config.json + bench restart")
+
+    # 6. background workers — push notifications are DELIVERED by RQ workers
+    try:
+        from frappe.utils.background_jobs import get_workers
+        check("Background workers running (deliver push notifications)", bool(get_workers()),
+              "production: sudo supervisorctl restart all / dev: make sure bench start includes workers")
+    except Exception:
+        pass
+    try:
+        from frappe.utils.scheduler import is_scheduler_disabled
+        check("Scheduler enabled (daily jobs)", not is_scheduler_disabled(),
+              "bench --site {} enable-scheduler".format(frappe.local.site))
+    except Exception:
+        pass
+
+    # 7. pywebpush importable (push notifications)
+    try:
+        import pywebpush  # noqa: F401
+        check("pywebpush installed", True)
+    except Exception:
+        check("pywebpush installed", False,
+              "bench pip install pywebpush   (or: ./env/bin/pip install pywebpush) + bench restart")
+
+    print(f"\n{len(okc)} passed, {len(fail)} failed.")
+    if fail:
+        print("Fix the FAIL lines above, then run the doctor again.")
+    return {"passed": len(okc), "failed": len(fail)}

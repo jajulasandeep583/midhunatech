@@ -3,7 +3,8 @@
 > **Maintenance rule:** this guide is updated in the SAME commit as any feature
 > change. If you change behavior, update the matching section here.
 >
-> Last updated: 2026-06-11 (commit: report filter bar + native Material Request creation + push notifications)
+> Last updated: 2026-06-11 (commit: per-tile field/filter control, production
+> doctor command, tile-config fixes)
 
 The Midhunatech PWA is a mobile app served by your Frappe/ERPNext site at
 **`https://yoursite.com/midhunatech`**. Users never see the ERPNext desk —
@@ -19,8 +20,11 @@ cd ~/frappe-bench
 bench get-app https://github.com/jajulasandeep583/midhunatech.git
 bench --site yoursite.com install-app midhunatech
 bench --site yoursite.com migrate
+bench build --app midhunatech        # links assets — REQUIRED on production (nginx)
 bench --site yoursite.com clear-cache
 bench restart
+# verify everything:
+bench --site yoursite.com execute midhunatech.install.doctor
 ```
 
 - Built frontend is committed — **no Node/yarn needed on the server**.
@@ -62,20 +66,29 @@ tiles, and bottom-nav pins.
 **B. On the desk (full control):** open `/app/midhunatech-pwa-config` and add
 a row to the *Modules* table.
 
-To add a **Sales Invoice** tile:
+To add a **Sales Invoice** tile, add a row in the *Modules* table and open it
+(click the row → expand). Fill:
 
 | Field | Value |
 |---|---|
-| Module Name | `sales_invoice` (unique key, lowercase) |
-| Label | `Sales Invoice` |
+| Display Label | `Sales Invoice` |
+| Module Key | `sales_invoice` (unique, lowercase, no spaces) |
 | Module Type | `doc_list` |
-| Doctype Name / Target URL | `Sales Invoice` |
-| Icon | an emoji (🧾) or icon name |
-| Enabled | ✓ |
+| **DocType** (appears in the *Source* section after picking doc_list) | `Sales Invoice` |
+| Icon | an emoji, e.g. 🧾 |
+| Enabled | ✓ (it is ON by default — a tile with Enabled off never shows) |
+| Fields (JSON array) — *optional* | `["customer", "posting_date", "grand_total", "status", "outstanding_amount"]` |
+| Filters (JSON) — *optional* | `{"status": "Unpaid"}` |
 
-Save → users pull-to-refresh or reopen the app. That's it — the tile opens a
+*Target URL is computed automatically on save — leave it alone.*
+
+**Save**, then in the app pull down on Home or reopen it. The tile opens a
 native, searchable, paginated Sales Invoice list with number cards on top and
-a read-only detail sheet on tap.
+a tap-through detail sheet.
+
+> Tile saved but not showing? It is almost always one of: **Enabled** unticked,
+> or the app not refreshed. Run the doctor (section 12) — it checks every tile
+> and tells you exactly what's wrong.
 
 ### All module types
 
@@ -96,8 +109,29 @@ order). Max 3 custom tabs are shown.
 
 ## 4. Which fields are displayed — and how to change them
 
-The app reads everything from the doctype's **meta**, so you control display
-with standard Frappe customization (**Customize Form**), no app changes:
+### Per-tile control (recommended)
+On any list tile (`doc_list`), set **Fields (JSON array)** in the PWA Config
+row, e.g. for Sales Invoice:
+
+```json
+["customer", "posting_date", "grand_total", "status", "outstanding_amount"]
+```
+
+- The **detail sheet** then shows exactly these fields, in this order.
+- The **list cards** show them too (the ones already used as the automatic
+  title/badge/amount/date aren't repeated; up to 5 extra lines).
+- Use the *fieldname* (lowercase with underscores), not the label — find it in
+  Customize Form. Unknown or permission-restricted fieldnames are ignored
+  safely.
+- Leave it **blank for automatic mode**: the main fields (title, status,
+  amount, date + *In List View* fields) are picked for you.
+
+Also available per tile — **Filters (JSON)**: e.g. `{"status": "Unpaid"}`
+shows only unpaid invoices; the number cards on top respect the filter too.
+
+### Site-wide control (automatic mode)
+Without per-tile Fields, the app derives display from the doctype's meta via
+standard **Customize Form** settings:
 
 | Where | What's shown | How to change |
 |---|---|---|
@@ -235,9 +269,26 @@ detects a newer build).
 
 | Symptom | Fix |
 |---|---|
+| **App blank / not loading on a production site** | `bench build --app midhunatech && bench restart` — production nginx serves `sites/assets`, which is created by bench build. Then run the doctor (below) |
 | Old UI after an update | Just close and reopen the app (cache-busting is automatic); worst case `bench clear-cache` |
+| Added tile not showing | *Enabled* unticked, or app not refreshed (pull down on Home). Run the doctor |
+| Tile opens "… is not configured" | Set the **DocType** field on that tile row and save |
 | Report says "Report failed" | Check the user has the report's role; DB Script Reports need `server_script_enabled` in **common** site config |
 | Empty home grid on a fresh site | `bench --site <s> execute midhunatech.install.seed_default_modules` |
 | Approvals tile empty | No active Workflow has a state the user's role can act on — check `/app/workflow` |
+| Push enabled but nothing arrives | Background workers must be running (`supervisorctl status`); needs HTTPS; iPhone: install to home screen first |
 | Push toggle errors "not supported" | Needs HTTPS; on iPhone install to home screen first |
-| Tile opens "Module not found" | Module Name in the config row doesn't match the URL slug |
+| Tile opens "Module not found" | Module Key in the config row doesn't match the URL slug |
+
+## 12. Production health check (doctor)
+
+One command verifies the whole installation — assets, tiles, doctypes,
+reports, server scripts, background workers, scheduler, push library — and
+prints the exact fix for anything broken:
+
+```bash
+bench --site yoursite.com execute midhunatech.install.doctor
+```
+
+Run it after every install/update on a live site, and whenever someone
+reports "the app is not loading". Aim for `0 failed`.

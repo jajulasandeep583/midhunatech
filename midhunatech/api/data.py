@@ -130,6 +130,42 @@ def _clean_text(s):
     return s
 
 
+def _user_fields(meta, perm, fields):
+    """Tile-configured display fields (JSON array of fieldnames) → sanitized
+    ordered list. Unknown, layout, technical and permission-restricted
+    fieldnames are silently dropped. Returns None when not configured."""
+    if not fields:
+        return None
+    try:
+        lst = frappe.parse_json(fields) if isinstance(fields, str) else fields
+    except Exception:
+        return None
+    if not isinstance(lst, list):
+        return None
+    out = []
+    for fn in lst:
+        fn = str(fn).strip()
+        df = meta.get_field(fn)
+        if not df or fn in _SKIP or fn not in perm:
+            continue
+        if df.fieldtype in _LAYOUT or df.fieldtype in _TECH_TYPES or df.fieldtype == "Password":
+            continue
+        if fn not in out:
+            out.append(fn)
+    return out or None
+
+
+def _user_filters(filters):
+    """Tile-configured list filters (JSON dict) → dict or None."""
+    if not filters:
+        return None
+    try:
+        d = frappe.parse_json(filters) if isinstance(filters, str) else filters
+    except Exception:
+        return None
+    return d if isinstance(d, dict) and d else None
+
+
 def _permitted_fields(meta, ptype="read"):
     """Fieldnames the current user may access at their permlevel — so restricted
     fields (e.g. salary at permlevel 1) are never leaked. Falls back to
@@ -151,9 +187,10 @@ def _permitted_fields(meta, ptype="read"):
 # ── view config + number cards ─────────────────────────────────────────────────
 
 @frappe.whitelist()
-def get_view(doctype, label=None):
+def get_view(doctype, label=None, fields=None, filters=None):
     meta = _require_read(doctype)
     perm = _permitted_fields(meta)
+    base = _user_filters(filters)
 
     title_field  = meta.title_field or "name"
     if title_field not in perm:
@@ -167,7 +204,12 @@ def get_view(doctype, label=None):
     date_field   = _pick_date_field(meta)
     if date_field not in perm:
         date_field = "modified"
-    sec_fields   = _list_fields(meta, title_field, status_field, amount_field, date_field, perm)
+    cfg_fields   = _user_fields(meta, perm, fields)
+    if cfg_fields:
+        used = {title_field, status_field, amount_field, date_field, "name"}
+        sec_fields = [f for f in cfg_fields if f not in used][:5]
+    else:
+        sec_fields = _list_fields(meta, title_field, status_field, amount_field, date_field, perm)
 
     fields_meta = []
     for fn in sec_fields:
@@ -185,7 +227,7 @@ def get_view(doctype, label=None):
         "date_label":   (meta.get_field(date_field).label if meta.get_field(date_field) else "Date"),
         "fields":       fields_meta,
         "can_create":   _can_create_native(doctype, meta),
-        "cards":        _cards(doctype, meta, status_field, date_field),
+        "cards":        _cards(doctype, meta, status_field, date_field, base),
     }
 
 
@@ -216,13 +258,16 @@ def _can_create_native(doctype, meta):
     return True
 
 
-def _cards(doctype, meta, status_field, date_field):
-    """Number cards. Uses frappe.db.count (v16 disallows SQL count() in get_list)."""
+def _cards(doctype, meta, status_field, date_field, base=None):
+    """Number cards. Uses frappe.db.count (v16 disallows SQL count() in get_list).
+    `base` = tile-configured filters — every card respects them."""
     cards = []
 
     def cnt(filters=None):
         try:
-            return int(frappe.db.count(doctype, filters or None))
+            f = dict(base or {})
+            f.update(filters or {})
+            return int(frappe.db.count(doctype, f or None))
         except Exception:
             return 0
 
@@ -239,7 +284,8 @@ def _cards(doctype, meta, status_field, date_field):
     if status_field:
         try:
             values = [v for v in frappe.get_all(
-                doctype, distinct=True, pluck=status_field, limit_page_length=0) if v]
+                doctype, filters=base or None, distinct=True,
+                pluck=status_field, limit_page_length=0) if v]
             ranked = sorted(((v, cnt({status_field: v})) for v in values),
                             key=lambda x: x[1], reverse=True)
             for label, value in ranked[:2]:
@@ -260,9 +306,10 @@ def _cards(doctype, meta, status_field, date_field):
 # ── list rows ──────────────────────────────────────────────────────────────────
 
 @frappe.whitelist()
-def get_list(doctype, search=None, start=0, page_length=20):
+def get_list(doctype, search=None, start=0, page_length=20, fields=None, filters=None):
     meta = _require_read(doctype)
     perm = _permitted_fields(meta)
+    base = _user_filters(filters)
     start = int(start or 0)
     page_length = min(int(page_length or 20), 100)
 
@@ -278,7 +325,12 @@ def get_list(doctype, search=None, start=0, page_length=20):
     date_field   = _pick_date_field(meta)
     if date_field not in perm:
         date_field = "modified"
-    sec_fields   = _list_fields(meta, title_field, status_field, amount_field, date_field, perm)
+    cfg_fields   = _user_fields(meta, perm, fields)
+    if cfg_fields:
+        used = {title_field, status_field, amount_field, date_field, "name"}
+        sec_fields = [f for f in cfg_fields if f not in used][:5]
+    else:
+        sec_fields = _list_fields(meta, title_field, status_field, amount_field, date_field, perm)
 
     wanted = ["name"]
     for f in [title_field, status_field, amount_field, date_field, *sec_fields]:
@@ -293,7 +345,7 @@ def get_list(doctype, search=None, start=0, page_length=20):
             or_filters.append([title_field, "like", s])
 
     rows = frappe.get_list(
-        doctype, fields=wanted, or_filters=or_filters,
+        doctype, fields=wanted, filters=base or None, or_filters=or_filters,
         start=start, page_length=page_length,
         order_by=f"{date_field} desc" if meta.has_field(date_field) else "modified desc",
     )
@@ -323,18 +375,26 @@ def get_list(doctype, search=None, start=0, page_length=20):
 # ── detail ─────────────────────────────────────────────────────────────────────
 
 @frappe.whitelist()
-def get_doc(doctype, name):
+def get_doc(doctype, name, fields=None):
     meta = _require_read(doctype)
     doc = frappe.get_doc(doctype, name)
     doc.check_permission("read")
     perm = _permitted_fields(meta)
+    cfg_fields = _user_fields(meta, perm, fields)
 
     title_field = meta.title_field or "name"
     if title_field not in perm:
         title_field = "name"
-    fields = []
-    for df in meta.fields:
-        if df.fieldname in _SKIP or df.fieldtype in _LAYOUT or df.hidden:
+
+    if cfg_fields:
+        # tile-configured: show exactly these fields, in this order
+        source = [meta.get_field(fn) for fn in cfg_fields]
+    else:
+        source = [df for df in meta.fields if not df.hidden]
+
+    out_fields = []
+    for df in source:
+        if df.fieldname in _SKIP or df.fieldtype in _LAYOUT:
             continue
         if df.fieldtype in ("Password",) or df.fieldtype in _TECH_TYPES or df.fieldname not in perm:
             continue
@@ -344,14 +404,14 @@ def get_doc(doctype, name):
         formatted = _fmt(df, val)
         if formatted == "":
             continue
-        fields.append({"label": df.label or df.fieldname, "value": formatted,
-                       "fieldtype": df.fieldtype})
+        out_fields.append({"label": df.label or df.fieldname, "value": formatted,
+                           "fieldtype": df.fieldtype})
 
     return {
         "name":   doc.name,
         "title":  str(doc.get(title_field) or doc.name),
         "status": (doc.get("status") or doc.get("workflow_state") or None),
-        "fields": fields,
+        "fields": out_fields,
     }
 
 
