@@ -13,6 +13,11 @@ Install once → configure everything from ERPNext desk → no code changes need
 
 ---
 
+> 📖 **[USER_GUIDE.md](USER_GUIDE.md)** — full how-to: installing, adding tiles
+> (Sales Invoice, reports, …), choosing which fields display, approvals,
+> report filters, Material Request creation, push notifications,
+> troubleshooting. Kept up to date with every feature commit.
+
 ## How it works (same mechanism as Frappe HRMS)
 
 ```
