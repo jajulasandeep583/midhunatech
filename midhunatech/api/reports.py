@@ -11,6 +11,26 @@ from frappe import _
 from frappe.utils import get_first_day, nowdate, strip_html_tags
 
 
+# Interactive filters the mobile filter bar offers per report (beyond dates).
+# Link filters use the same autocomplete API as the create forms.
+_REPORT_FILTERS = {
+    # as_list: the desk defines these as MultiSelectList — the report code
+    # expects a list, a bare string crashes the query builder
+    "Stock Balance": [
+        {"fieldname": "item_code", "label": "Item", "fieldtype": "Link", "options": "Item", "as_list": 1},
+        {"fieldname": "warehouse", "label": "Warehouse", "fieldtype": "Link", "options": "Warehouse", "as_list": 1},
+    ],
+    "Stock Ledger": [
+        {"fieldname": "item_code", "label": "Item", "fieldtype": "Link", "options": "Item"},
+        {"fieldname": "warehouse", "label": "Warehouse", "fieldtype": "Link", "options": "Warehouse"},
+    ],
+    "General Ledger": [
+        {"fieldname": "party_type", "label": "Party Type", "fieldtype": "Select",
+         "options": "\nCustomer\nSupplier\nEmployee"},
+    ],
+}
+
+
 @frappe.whitelist()
 def run(report_name, filters=None):
     report = frappe.get_doc("Report", report_name)
@@ -19,24 +39,34 @@ def run(report_name, filters=None):
 
     if isinstance(filters, str):
         filters = json.loads(filters or "{}")
-    filters = filters or {}
+    filters = {k: v for k, v in (filters or {}).items() if v not in (None, "")}
+    filter_meta = _REPORT_FILTERS.get(report_name) or []
 
     from frappe.desk.query_report import run as query_report_run
 
-    # First try with the given filters; many standard reports (Balance Sheet,
-    # GL, Stock Balance, ...) have mandatory filters the mobile app does not
-    # collect — on failure retry once with sensible defaults merged in.
-    try:
-        res = query_report_run(report_name, filters=filters, ignore_prepared_report=True)
-        applied = filters
-        if not res.get("columns") and not res.get("result"):
-            # frappe swallows mandatory-filter errors and returns an empty
-            # result (e.g. General Ledger) — treat that as "needs defaults"
-            raise frappe.ValidationError("empty result")
-    except Exception:
-        frappe.clear_messages()
+    # Reports with an interactive filter bar always get the defaults merged
+    # (so the date range is real and visible). Everything else: try the given
+    # filters first; many standard reports (Balance Sheet, GL, ...) have
+    # mandatory filters the mobile app does not collect — on failure retry
+    # once with sensible defaults merged in.
+    if filter_meta:
         applied = _merge_defaults(filters)
+        for f in filter_meta:
+            if f.get("as_list") and isinstance(applied.get(f["fieldname"]), str):
+                applied[f["fieldname"]] = [applied[f["fieldname"]]]
         res = query_report_run(report_name, filters=applied, ignore_prepared_report=True)
+    else:
+        try:
+            res = query_report_run(report_name, filters=filters, ignore_prepared_report=True)
+            applied = filters
+            if not res.get("columns") and not res.get("result"):
+                # frappe swallows mandatory-filter errors and returns an empty
+                # result (e.g. General Ledger) — treat that as "needs defaults"
+                raise frappe.ValidationError("empty result")
+        except Exception:
+            frappe.clear_messages()
+            applied = _merge_defaults(filters)
+            res = query_report_run(report_name, filters=applied, ignore_prepared_report=True)
 
     columns = []
     for c in res.get("columns") or []:
@@ -65,6 +95,7 @@ def run(report_name, filters=None):
         "chart": _clean_chart(res.get("chart")),
         "message": _clean_message(res.get("message")),
         "applied_filters": applied,
+        "filter_meta": filter_meta,
     }
 
 

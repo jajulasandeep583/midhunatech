@@ -133,10 +133,16 @@ def _clean_text(s):
 def _permitted_fields(meta, ptype="read"):
     """Fieldnames the current user may access at their permlevel — so restricted
     fields (e.g. salary at permlevel 1) are never leaked. Falls back to
-    permlevel-0 fields if the framework helper is unavailable."""
-    try:
-        allowed = set(meta.get_permitted_fieldnames(permission_type=ptype) or [])
-    except Exception:
+    permlevel-0 fields if the framework helper is unavailable. Child doctypes
+    have no permissions of their own (the helper returns nothing for them) —
+    use their permlevel-0 fields."""
+    allowed = set()
+    if not getattr(meta, "istable", 0):
+        try:
+            allowed = set(meta.get_permitted_fieldnames(permission_type=ptype) or [])
+        except Exception:
+            allowed = set()
+    if not allowed:
         allowed = {df.fieldname for df in meta.fields if int(df.permlevel or 0) == 0}
     allowed.add("name")
     return allowed
@@ -183,14 +189,30 @@ def get_view(doctype, label=None):
     }
 
 
+# Doctypes whose required line-item table the native create form CAN handle.
+# fields: curated row fields (auto-filled ones like uom/conversion_factor are
+# left to set_missing_values); reqd: required in the mobile form even when the
+# docfield itself is optional (e.g. warehouse — mandatory for stock items);
+# copy_parent: row field ← parent field when the row leaves it blank.
+_CHILD_CREATE = {
+    "Material Request": {
+        "table": "items",
+        "fields": ["item_code", "qty", "warehouse"],
+        "reqd": {"item_code", "qty", "warehouse"},
+        "parent_reqd": {"schedule_date"},
+        "copy_parent": {"schedule_date": "schedule_date"},
+    },
+}
+
+
 def _can_create_native(doctype, meta):
     """True only if the user can create AND the doctype has no required child
-    table (line items) — so the native "+" never leads to a dead end."""
+    table (line items) — unless we support that table natively."""
     if not frappe.has_permission(doctype, "create"):
         return False
     for df in meta.fields:
         if df.fieldtype in ("Table", "Table MultiSelect") and df.reqd:
-            return False
+            return doctype in _CHILD_CREATE
     return True
 
 
@@ -342,21 +364,8 @@ _CREATE_TYPES = {
 }
 
 
-@frappe.whitelist()
-def get_create_meta(doctype):
-    """Fields needed to create a record natively. Refuses doctypes that require
-    child tables (line items) — those are directed to the desk to avoid breakage."""
-    if not frappe.has_permission(doctype, "create"):
-        frappe.throw(_("You are not permitted to create {0}").format(doctype),
-                     frappe.PermissionError)
-    meta = frappe.get_meta(doctype)
-    perm = _permitted_fields(meta, "write")
-
-    for df in meta.fields:
-        if df.fieldtype in ("Table", "Table MultiSelect") and df.reqd:
-            return {"creatable": False,
-                    "reason": _("{0} needs line items — please use the desk to create it.").format(_(doctype))}
-
+def _create_fields(meta, perm, cap=12):
+    """Mandatory-first creatable field list for a (parent or child) meta."""
     fields, seen = [], set()
 
     def add(df):
@@ -367,22 +376,75 @@ def get_create_meta(doctype):
         if df.hidden or df.read_only or df.fieldname not in perm:
             return
         seen.add(df.fieldname)
+        default = df.default or ""
+        # resolve dynamic defaults so the mobile form prefills real values
+        if df.fieldtype == "Date" and str(default).lower() == "today":
+            default = nowdate()
+        elif df.fieldtype == "Datetime" and str(default).lower() == "now":
+            default = frappe.utils.now()
+        elif df.fieldtype == "Link" and df.options == "Company" and not default:
+            default = (frappe.defaults.get_user_default("Company")
+                       or frappe.db.get_single_value("Global Defaults", "default_company") or "")
         fields.append({
             "fieldname": df.fieldname, "label": df.label or df.fieldname,
             "fieldtype": df.fieldtype, "options": df.options or "",
-            "reqd": int(df.reqd or 0), "default": df.default or "",
+            "reqd": int(df.reqd or 0), "default": default,
         })
 
     for df in meta.fields:          # mandatory fields first
         if df.reqd:
             add(df)
     for df in meta.fields:          # then a few common optional ones
-        if len(fields) >= 12:
+        if len(fields) >= cap:
             break
         if df.in_list_view or df.bold:
             add(df)
+    return fields
 
-    return {"creatable": True, "doctype": doctype, "fields": fields}
+
+@frappe.whitelist()
+def get_create_meta(doctype):
+    """Fields needed to create a record natively. Doctypes with a required
+    child table are refused unless the table is supported (_CHILD_CREATE) —
+    then its row fields are returned too (mobile line-item editor)."""
+    if not frappe.has_permission(doctype, "create"):
+        frappe.throw(_("You are not permitted to create {0}").format(doctype),
+                     frappe.PermissionError)
+    meta = frappe.get_meta(doctype)
+    perm = _permitted_fields(meta, "write")
+
+    child = None
+    spec = _CHILD_CREATE.get(doctype)
+    for df in meta.fields:
+        if df.fieldtype in ("Table", "Table MultiSelect") and df.reqd:
+            if not spec:
+                return {"creatable": False,
+                        "reason": _("{0} needs line items — please use the desk to create it.").format(_(doctype))}
+            cdf = meta.get_field(spec["table"])
+            cmeta = frappe.get_meta(cdf.options)
+            cperm = _permitted_fields(cmeta, "write")
+            cfields = []
+            for fn in spec["fields"]:
+                fdf = cmeta.get_field(fn)
+                if not fdf or fn not in cperm:
+                    continue
+                cfields.append({
+                    "fieldname": fn, "label": fdf.label or fn,
+                    "fieldtype": fdf.fieldtype, "options": fdf.options or "",
+                    "reqd": 1 if fn in spec["reqd"] else int(fdf.reqd or 0),
+                    "default": fdf.default or "",
+                })
+            child = {"fieldname": spec["table"], "label": cdf.label or spec["table"],
+                     "fields": cfields}
+            break
+
+    fields = _create_fields(meta, perm)
+    if spec:
+        for f in fields:
+            if f["fieldname"] in spec.get("parent_reqd", ()):
+                f["reqd"] = 1
+
+    return {"creatable": True, "doctype": doctype, "fields": fields, "child": child}
 
 
 @frappe.whitelist()
@@ -407,7 +469,9 @@ def search_link(doctype, txt="", page_length=10):
 
 @frappe.whitelist()
 def create_doc(doctype, values):
-    """Create a record from the native form (permissions + validations enforced)."""
+    """Create a record from the native form (permissions + validations enforced).
+    `values` may include a list under the supported child fieldname
+    (e.g. Material Request "items") — rows are filtered the same way."""
     if isinstance(values, str):
         values = frappe.parse_json(values)
     if not frappe.has_permission(doctype, "create"):
@@ -418,11 +482,31 @@ def create_doc(doctype, values):
     # crafted request can't set restricted fields the form never exposed.
     writable = _permitted_fields(meta, "write")
     skip = _SKIP | {"owner", "creation", "modified", "modified_by", "docstatus"}
+    spec = _CHILD_CREATE.get(doctype)
+    child_field = spec["table"] if spec else None
 
     doc = frappe.new_doc(doctype)
     for key, val in (values or {}).items():
+        if key == child_field:
+            continue
         if key in writable and key not in skip and val not in (None, ""):
             doc.set(key, val)
+
+    rows = (values or {}).get(child_field) if child_field else None
+    if child_field and rows:
+        cmeta = frappe.get_meta(meta.get_field(child_field).options)
+        cwritable = _permitted_fields(cmeta, "write")
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            clean = {k: v for k, v in row.items()
+                     if k in cwritable and k not in skip and v not in (None, "")}
+            for ck, pk in (spec.get("copy_parent") or {}).items():
+                if not clean.get(ck) and (values or {}).get(pk):
+                    clean[ck] = values[pk]
+            if clean:
+                doc.append(child_field, clean)
+
     doc.insert()
     frappe.db.commit()
     return {"name": doc.name}

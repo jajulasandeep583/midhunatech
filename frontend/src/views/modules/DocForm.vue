@@ -58,6 +58,48 @@
           <input v-else v-model="form[f.fieldname]" class="df-input" :type="inputType(f.fieldtype)" />
         </div>
 
+        <!-- ── line items (e.g. Material Request items) ── -->
+        <template v-if="child">
+          <div class="df-items-head">
+            <span class="df-items-title">{{ child.label }}</span>
+            <span class="df-items-count">{{ rows.length }} item{{ rows.length !== 1 ? "s" : "" }}</span>
+          </div>
+
+          <div v-for="(row, ri) in rows" :key="ri" class="df-item-card">
+            <div class="df-item-top">
+              <span class="df-item-no">#{{ ri + 1 }}</span>
+              <button v-if="rows.length > 1" class="df-item-del" aria-label="Remove item"
+                      @click="rows.splice(ri, 1)">✕ Remove</button>
+            </div>
+            <div v-for="cf in child.fields" :key="cf.fieldname" class="df-field" style="margin-bottom:10px;">
+              <label class="df-label">
+                {{ cf.label }} <span v-if="cf.reqd" class="df-req">*</span>
+              </label>
+
+              <select v-if="cf.fieldtype === 'Select'" v-model="row[cf.fieldname]" class="df-input">
+                <option value="">— select —</option>
+                <option v-for="o in selectOptions(cf)" :key="o" :value="o">{{ o }}</option>
+              </select>
+
+              <div v-else-if="cf.fieldtype === 'Link'" class="df-link">
+                <input class="df-input" :value="row[cf.fieldname]"
+                  :placeholder="`Search ${cf.options}`"
+                  @input="onLink(cf, $event.target.value, ri)"
+                  @focus="onLink(cf, row[cf.fieldname] || '', ri)" />
+                <ul v-if="linkFor === `${ri}:${cf.fieldname}` && linkResults.length" class="df-link-list">
+                  <li v-for="o in linkResults" :key="o.value" @mousedown.prevent="pickLink(cf, o, ri)">
+                    <b>{{ o.value }}</b><span v-if="o.label !== o.value"> — {{ o.label }}</span>
+                  </li>
+                </ul>
+              </div>
+
+              <input v-else v-model="row[cf.fieldname]" class="df-input" :type="inputType(cf.fieldtype)" />
+            </div>
+          </div>
+
+          <button class="df-add-item" @click="rows.push(emptyRow())">＋ Add item</button>
+        </template>
+
         <div v-if="error" class="df-error" role="alert">{{ error }}</div>
 
         <button class="df-submit" :disabled="!canSubmit || saving" @click="submit">
@@ -90,15 +132,24 @@ const error = ref(null);
 const notCreatable = ref(null);
 const fields = ref([]);
 const form = reactive({});
+const child = ref(null);          // {fieldname, label, fields} for line items
+const rows = ref([]);             // line-item rows being edited
 
 const linkFor = ref(null);
 const linkResults = ref([]);
 let linkTimer = null;
 
+function emptyRow() {
+  const r = {};
+  for (const cf of child.value?.fields || []) r[cf.fieldname] = cf.default || "";
+  return r;
+}
+
 watch(() => props.open, async (isOpen) => {
   if (!isOpen) return;
   // reset
   error.value = null; notCreatable.value = null; fields.value = [];
+  child.value = null; rows.value = [];
   Object.keys(form).forEach(k => delete form[k]);
   loading.value = true;
   try {
@@ -107,6 +158,10 @@ watch(() => props.open, async (isOpen) => {
     fields.value = meta.fields;
     for (const f of meta.fields) {
       form[f.fieldname] = f.fieldtype === "Check" ? (Number(f.default) ? 1 : 0) : (f.default || "");
+    }
+    if (meta.child) {
+      child.value = meta.child;
+      rows.value = [emptyRow()];
     }
   } catch (e) {
     notCreatable.value = e.message;
@@ -127,29 +182,42 @@ function inputType(ft) {
   return "text";
 }
 
-function onLink(f, txt) {
-  form[f.fieldname] = txt;
-  linkFor.value = f.fieldname;
+function onLink(f, txt, ri = null) {
+  const target = ri == null ? form : rows.value[ri];
+  target[f.fieldname] = txt;
+  linkFor.value = ri == null ? f.fieldname : `${ri}:${f.fieldname}`;
   clearTimeout(linkTimer);
   linkTimer = setTimeout(async () => {
     try { linkResults.value = await searchLink(f.options, txt); }
     catch { linkResults.value = []; }
   }, 250);
 }
-function pickLink(f, o) {
-  form[f.fieldname] = o.value;
+function pickLink(f, o, ri = null) {
+  const target = ri == null ? form : rows.value[ri];
+  target[f.fieldname] = o.value;
   linkResults.value = [];
   linkFor.value = null;
 }
 
-const canSubmit = computed(() =>
-  fields.value.filter(f => f.reqd).every(f => form[f.fieldname] !== "" && form[f.fieldname] != null));
+const filled = (v) => v !== "" && v != null;
+
+const canSubmit = computed(() => {
+  if (!fields.value.filter(f => f.reqd).every(f => filled(form[f.fieldname]))) return false;
+  if (child.value) {
+    const reqd = child.value.fields.filter(f => f.reqd);
+    if (!rows.value.length) return false;
+    if (!rows.value.every(r => reqd.every(f => filled(r[f.fieldname])))) return false;
+  }
+  return true;
+});
 
 async function submit() {
   saving.value = true;
   error.value = null;
   try {
-    const res = await createDoc(props.doctype, { ...form });
+    const payload = { ...form };
+    if (child.value) payload[child.value.fieldname] = rows.value.map(r => ({ ...r }));
+    const res = await createDoc(props.doctype, payload);
     emit("created", res.name);
     emit("close");
   } catch (e) {
@@ -185,6 +253,22 @@ async function submit() {
 }
 .df-link-list li { padding: 9px 12px; font-size: 13.5px; border-radius: 8px; cursor: pointer; }
 .df-link-list li:hover { background: #f1f5f9; }
+
+/* ── line items ── */
+.df-items-head { display: flex; align-items: baseline; justify-content: space-between;
+  margin: 20px 0 10px; }
+.df-items-title { font-size: 14px; font-weight: 800; color: #334155; }
+.df-items-count { font-size: 12px; font-weight: 600; color: #94a3b8; }
+.df-item-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px;
+  padding: 12px 14px 4px; margin-bottom: 10px; }
+.df-item-card .df-input { background: #fff; }
+.df-item-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.df-item-no { font-size: 12px; font-weight: 800; color: #94a3b8; }
+.df-item-del { border: none; background: #fef2f2; color: #dc2626; font-size: 12px; font-weight: 700;
+  border-radius: 8px; padding: 5px 10px; cursor: pointer; -webkit-appearance: none; }
+.df-add-item { width: 100%; height: 44px; border: 1.5px dashed #c7d2fe; border-radius: 12px;
+  background: #eef2ff; color: #4f46e5; font-size: 14px; font-weight: 700; cursor: pointer;
+  margin-bottom: 14px; -webkit-appearance: none; }
 
 .df-error { background: #fef2f2; color: #dc2626; font-size: 13px; border-radius: 10px;
   padding: 10px 12px; margin-bottom: 12px; }

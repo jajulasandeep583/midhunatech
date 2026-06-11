@@ -17,17 +17,49 @@
     </div>
 
     <template v-else>
-      <!-- ── date filter bar (only when the report uses dates) ── -->
-      <div v-if="hasDates" class="rp-filters">
-        <label class="rp-fl">
-          <span>From</span>
-          <input type="date" v-model="fromDate" />
-        </label>
-        <label class="rp-fl">
-          <span>To</span>
-          <input type="date" v-model="toDate" />
-        </label>
-        <button class="rp-apply" :disabled="loading" @click="run({ from_date: fromDate, to_date: toDate })">Apply</button>
+      <!-- ── filter bar (dates + report-specific filters) ── -->
+      <div v-if="hasDates || filterMeta.length" class="rp-filters">
+        <div v-if="hasDates" class="rp-f-row">
+          <label class="rp-fl">
+            <span>From</span>
+            <input type="date" v-model="fromDate" />
+          </label>
+          <label class="rp-fl">
+            <span>To</span>
+            <input type="date" v-model="toDate" />
+          </label>
+        </div>
+
+        <div v-for="fm in filterMeta" :key="fm.fieldname" class="rp-f-row">
+          <label class="rp-fl" style="flex:1;">
+            <span>{{ fm.label }}</span>
+            <!-- Select -->
+            <select v-if="fm.fieldtype === 'Select'" v-model="extra[fm.fieldname]">
+              <option value="">All</option>
+              <option v-for="o in selectOptions(fm)" :key="o" :value="o">{{ o }}</option>
+            </select>
+            <!-- Link autocomplete -->
+            <div v-else class="rp-link">
+              <input
+                type="text"
+                :value="extra[fm.fieldname] || ''"
+                :placeholder="`All — search ${fm.label.toLowerCase()}…`"
+                @input="onLink(fm, $event.target.value)"
+                @focus="onLink(fm, extra[fm.fieldname] || '')"
+                @blur="closeLinkSoon"
+              />
+              <button v-if="extra[fm.fieldname]" class="rp-clear" aria-label="Clear"
+                      @mousedown.prevent="clearLink(fm)">✕</button>
+              <ul v-if="linkFor === fm.fieldname && linkResults.length" class="rp-link-list">
+                <li v-for="o in linkResults" :key="o.value" @mousedown.prevent="pickLink(fm, o)">
+                  <b>{{ o.value }}</b><span v-if="o.label !== o.value"> — {{ o.label }}</span>
+                </li>
+              </ul>
+            </div>
+          </label>
+        </div>
+
+        <button class="rp-apply" :disabled="loading" @click="apply">Apply filters</button>
       </div>
 
       <!-- ── summary KPI cards ── -->
@@ -78,9 +110,10 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, reactive, ref, watch } from "vue";
 import { IonButton, IonSpinner } from "@ionic/vue";
 import { apiFetch } from "@/data/session.js";
+import { searchLink } from "@/data/docdata.js";
 
 const props = defineProps({
   report:  { type: String, required: true },
@@ -98,6 +131,47 @@ const chartEl = ref(null);
 const fromDate = ref("");
 const toDate = ref("");
 const hasDates = ref(false);
+const filterMeta = ref([]);
+const extra = reactive({});
+
+// link-filter autocomplete state
+const linkFor = ref(null);
+const linkResults = ref([]);
+let linkTimer = null;
+
+function selectOptions(fm) {
+  return (fm.options || "").split("\n").map((s) => s.trim()).filter(Boolean);
+}
+function onLink(fm, txt) {
+  extra[fm.fieldname] = txt;
+  linkFor.value = fm.fieldname;
+  clearTimeout(linkTimer);
+  linkTimer = setTimeout(async () => {
+    try { linkResults.value = await searchLink(fm.options, txt); }
+    catch { linkResults.value = []; }
+  }, 250);
+}
+function pickLink(fm, o) {
+  extra[fm.fieldname] = o.value;
+  linkResults.value = [];
+  linkFor.value = null;
+  apply();
+}
+function clearLink(fm) {
+  extra[fm.fieldname] = "";
+  linkResults.value = [];
+  linkFor.value = null;
+  apply();
+}
+function closeLinkSoon() {
+  setTimeout(() => { linkFor.value = null; linkResults.value = []; }, 200);
+}
+
+function apply() {
+  const f = { ...extra };
+  if (hasDates.value) { f.from_date = fromDate.value; f.to_date = toDate.value; }
+  run(f);
+}
 
 const NUM_TYPES = new Set(["Currency", "Float", "Int", "Percent", "Duration"]);
 const inr = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 });
@@ -128,6 +202,7 @@ async function run(extra = null) {
     summary.value = d.summary || [];
     chart.value = d.chart || null;
     message.value = d.message || null;
+    filterMeta.value = d.filter_meta || [];
 
     const af = d.applied_filters || {};
     if (af.from_date && af.to_date) {
@@ -209,20 +284,35 @@ defineExpose({ reload: () => run() });
 
 /* ── filter bar ── */
 .rp-filters {
-  display: flex; align-items: flex-end; gap: 8px;
+  display: flex; flex-direction: column; gap: 8px;
   background: #fff; border: 1px solid #e2e8f0; border-radius: 14px;
   padding: 10px 12px; margin-bottom: 12px;
 }
+.rp-f-row { display: flex; align-items: flex-end; gap: 8px; }
 .rp-fl { flex: 1; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .rp-fl span { font-size: 10.5px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: .3px; }
-.rp-fl input {
+.rp-fl input, .rp-fl select {
   width: 100%; border: 1.5px solid #e2e8f0; border-radius: 10px; background: #f8fafc;
   padding: 7px 8px; font-size: 13px; color: #1e293b; outline: none; -webkit-appearance: none;
+  font-family: inherit;
 }
+.rp-link { position: relative; }
+.rp-clear {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  border: none; background: #e2e8f0; color: #64748b; border-radius: 50%;
+  width: 20px; height: 20px; font-size: 11px; line-height: 1; cursor: pointer;
+}
+.rp-link-list {
+  position: absolute; z-index: 30; top: 100%; left: 0; right: 0; margin: 4px 0 0; padding: 4px;
+  list-style: none; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(15,23,42,.12); max-height: 220px; overflow-y: auto;
+}
+.rp-link-list li { padding: 9px 12px; font-size: 13px; border-radius: 8px; cursor: pointer; }
+.rp-link-list li:hover { background: #f1f5f9; }
 .rp-apply {
-  height: 36px; padding: 0 14px; border: none; border-radius: 10px;
+  height: 38px; border: none; border-radius: 10px;
   background: var(--ion-color-primary, #6366f1); color: #fff;
-  font-size: 13px; font-weight: 700; cursor: pointer; -webkit-appearance: none;
+  font-size: 13.5px; font-weight: 700; cursor: pointer; -webkit-appearance: none;
 }
 .rp-apply:disabled { opacity: .6; }
 
