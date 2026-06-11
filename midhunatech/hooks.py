@@ -48,6 +48,18 @@ after_install  = "midhunatech.install.after_install"
 before_migrate = "midhunatech.install.before_migrate"
 after_migrate  = "midhunatech.install.after_migrate"
 
+# ── Push notifications (Web Push) ─────────────────────────────────────────────
+# New Workflow Action → push "Approval required" to everyone who can act;
+# new Notification Log → mirror Frappe's in-app notification as a push.
+doc_events = {
+    "Workflow Action": {
+        "after_insert": "midhunatech.api.push.notify_workflow_action",
+    },
+    "Notification Log": {
+        "after_insert": "midhunatech.api.push.notify_notification_log",
+    },
+}
+
 # ── Jinja ─────────────────────────────────────────────────────────────────────
 jinja = {
     "methods": [

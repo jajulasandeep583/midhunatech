@@ -1,7 +1,7 @@
 // Copyright (c) 2024, Midhunatech and Contributors — GPL-3.0
 
 import { createRouter, createWebHistory } from "@ionic/vue-router";
-import { session, checkSession } from "@/data/session.js";
+import { session, checkSession, appConfig, loadConfig } from "@/data/session.js";
 
 const routes = [
   // ── Public ────────────────────────────────────────────────────────────────
@@ -62,6 +62,12 @@ router.beforeEach(async (to) => {
       name:  "Login",
       query: { r: to.fullPath },   // preserve the original destination
     };
+  }
+
+  // Direct deep links (e.g. from a push notification) land on module routes
+  // without ever visiting Home — make sure the PWA config is loaded.
+  if (!appConfig.loaded) {
+    await loadConfig();
   }
 
   return true;

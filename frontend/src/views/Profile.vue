@@ -68,6 +68,24 @@
         </ion-list>
       </template>
 
+      <!-- ── Push notifications ── -->
+      <div class="section-title">Notifications</div>
+      <div class="push-card">
+        <div class="push-row">
+          <div>
+            <div class="push-title">🔔 Push notifications</div>
+            <div class="push-sub">{{ pushHint }}</div>
+          </div>
+          <ion-toggle
+            :checked="push.state === 'on'"
+            :disabled="push.busy || push.state === 'unsupported' || push.state === 'denied'"
+            @ionChange="togglePush"
+            aria-label="Enable push notifications"
+          />
+        </div>
+        <div v-if="push.error" class="pw-msg err">{{ push.error }}</div>
+      </div>
+
       <!-- ── Security / change password ── -->
       <div class="section-title">Security</div>
       <div class="pw-card">
@@ -130,17 +148,50 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed } from "vue";
+import { ref, reactive, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonContent,
-  IonList, IonItem, IonLabel,
+  IonList, IonItem, IonLabel, IonToggle,
 } from "@ionic/vue";
 import { session, appConfig, logout, apiFetch } from "@/data/session.js";
+import { pushState, enablePush, disablePush } from "@/data/push.js";
 
 const router   = useRouter();
 const busy     = ref(false);
 const hostname = window.location.hostname;
+
+// ── Push notifications ───────────────────────────────────────────────────────
+const push = reactive({ state: "off", busy: false, error: "" });
+
+onMounted(async () => { push.state = await pushState(); });
+
+const pushHint = computed(() => {
+  if (push.state === "unsupported") return "Not supported on this browser";
+  if (push.state === "denied")      return "Blocked — allow notifications in browser settings";
+  if (push.state === "on")          return "Approvals & alerts arrive on this device";
+  return "Get notified of pending approvals & alerts";
+});
+
+async function togglePush(e) {
+  if (push.busy) return;
+  push.busy = true;
+  push.error = "";
+  try {
+    if (e.detail.checked && push.state !== "on") {
+      await enablePush();
+      push.state = "on";
+    } else if (!e.detail.checked && push.state === "on") {
+      await disablePush();
+      push.state = "off";
+    }
+  } catch (err) {
+    push.error = err.message || "Could not change notification setting.";
+    push.state = await pushState();
+  } finally {
+    push.busy = false;
+  }
+}
 
 // ── Change password ──────────────────────────────────────────────────────────
 const pwOpen = ref(false);
@@ -203,6 +254,15 @@ async function handleLogout() {
 .profile-email { font-size: 13px; color: #94a3b8; margin-top: 2px; }
 
 .info-list { border-radius: 14px; margin: 0 16px; overflow: hidden; }
+
+/* ── Push notifications card ── */
+.push-card {
+  margin: 0 16px; background: #fff; border: 1px solid #e2e8f0;
+  border-radius: 14px; padding: 12px 16px;
+}
+.push-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.push-title { font-size: 15px; font-weight: 600; color: #334155; }
+.push-sub { font-size: 12px; color: #94a3b8; margin-top: 2px; }
 
 /* ── Change password card ── */
 .pw-card {

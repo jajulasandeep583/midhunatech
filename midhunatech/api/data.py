@@ -12,9 +12,11 @@ permissions (uses frappe.get_list, which applies role + user permissions).
     get_doc(doctype)   -> read-only field list for the detail sheet
 """
 
+import re
+
 import frappe
 from frappe import _
-from frappe.utils import fmt_money, format_date, format_datetime, get_first_day, nowdate
+from frappe.utils import fmt_money, format_date, format_datetime, get_first_day, nowdate, strip_html_tags
 
 # Fields that should never be shown to the user
 _SKIP = {
@@ -24,6 +26,10 @@ _SKIP = {
 }
 _LAYOUT = {"Section Break", "Column Break", "Tab Break", "HTML", "Table",
            "Table MultiSelect", "Button", "Fold", "Heading", "Image"}
+
+# Technical fieldtypes that are meaningless (or unreadable) on a phone screen
+_TECH_TYPES = {"Code", "JSON", "HTML Editor", "Markdown Editor", "Attach",
+               "Attach Image", "Signature", "Geolocation", "Barcode", "Icon", "Color"}
 
 _CARD_COLORS = ["#6366f1", "#22c55e", "#f59e0b", "#ec4899", "#0ea5e9", "#8b5cf6"]
 
@@ -109,7 +115,19 @@ def _fmt(df, value):
             return str(value).split(".")[0]
     except Exception:
         pass
-    return str(value)
+    return _clean_text(str(value))
+
+
+def _clean_text(s):
+    """Raw HTML (addresses, terms, rich text) → short readable text."""
+    if "<" in s and ">" in s:
+        s = re.sub(r"<br\s*/?>", ", ", s, flags=re.I)
+        s = re.sub(r"</(p|div|tr|li|h\d)>", ", ", s, flags=re.I)
+        s = strip_html_tags(s)
+    s = re.sub(r"\s+", " ", s).strip(" ,")
+    if len(s) > 400:
+        s = s[:400].rstrip() + "…"
+    return s
 
 
 def _permitted_fields(meta, ptype="read"):
@@ -296,7 +314,7 @@ def get_doc(doctype, name):
     for df in meta.fields:
         if df.fieldname in _SKIP or df.fieldtype in _LAYOUT or df.hidden:
             continue
-        if df.fieldtype in ("Password",) or df.fieldname not in perm:
+        if df.fieldtype in ("Password",) or df.fieldtype in _TECH_TYPES or df.fieldname not in perm:
             continue
         val = doc.get(df.fieldname)
         if val in (None, "", 0) and df.fieldtype not in ("Check", "Currency", "Float", "Int"):
