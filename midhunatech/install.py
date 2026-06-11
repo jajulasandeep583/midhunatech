@@ -260,6 +260,15 @@ def doctor():
     check("Assets linked under sites/assets (served by nginx)", os.path.exists(assets_index),
           "run: bench build --app midhunatech   (creates the assets symlink) then bench restart")
 
+    # 2b. the served bundle must be the SAME build as the app's (stale copies
+    # happen when assets were copied instead of symlinked and never rebuilt)
+    if os.path.exists(app_index) and os.path.exists(assets_index):
+        same = (os.path.realpath(assets_index) == os.path.realpath(app_index)
+                or (os.path.getsize(assets_index) == os.path.getsize(app_index)
+                    and abs(os.path.getmtime(assets_index) - os.path.getmtime(app_index)) < 2))
+        check("Served bundle matches the app's build (not stale)", same,
+              "run: bench build --app midhunatech && bench --site {} clear-cache".format(frappe.local.site))
+
     # 3. app installed on this site
     installed = "midhunatech" in frappe.get_installed_apps()
     check("App installed on this site", installed,

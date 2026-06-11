@@ -104,7 +104,7 @@
               </div>
               <div v-if="m.module_type === 'report'" class="st-field">
                 <label>Report filters (JSON, optional)</label>
-                <input v-model="m.report_filters" type="text" placeholder='{"company": "RBOL"}' />
+                <input v-model="m.report_filters" type="text" placeholder='{"company": "Your Company"}' />
               </div>
               <label class="st-check">
                 <input v-model="m.is_enabled" type="checkbox" :true-value="1" :false-value="0" />

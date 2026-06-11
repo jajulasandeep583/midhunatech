@@ -14,6 +14,14 @@
         <div slot="end" style="padding-right:14px;display:flex;align-items:center;gap:10px;">
           <button
             class="mt-bell"
+            aria-label="Refresh app"
+            :disabled="refreshing"
+            @click="doHardRefresh"
+          >
+            <span :class="{ 'mt-spin': refreshing }" style="display:inline-block;">⟳</span>
+          </button>
+          <button
+            class="mt-bell"
             aria-label="Notifications"
             @click="router.push('/midhunatech/notifications')"
           >
@@ -174,7 +182,7 @@ import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonContent,
   IonRefresher, IonRefresherContent, IonSkeletonText, IonButton,
 } from "@ionic/vue";
-import { session, appConfig, loadConfig, hexAlpha } from "@/data/session.js";
+import { session, appConfig, loadConfig, hexAlpha, hardRefresh } from "@/data/session.js";
 import { notify, loadFeed } from "@/data/notify.js";
 import {
   checkin, loadDashboard, toggleCheckin, getCoords,
@@ -222,6 +230,12 @@ async function doToggle() {
   } catch { /* error surfaced in checkin.error */ }
 }
 
+const refreshing = ref(false);
+async function doHardRefresh() {
+  refreshing.value = true;
+  try { await hardRefresh(); } finally { /* page navigates away */ }
+}
+
 async function retry() {
   appConfig.error  = null;
   appConfig.loaded = false;
@@ -262,6 +276,8 @@ function iconChar(name) {
 </script>
 
 <style scoped>
+@keyframes mt-rotate { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+.mt-spin { animation: mt-rotate 1s linear infinite; }
 .mt-bell {
   position: relative;
   width: 38px; height: 38px;

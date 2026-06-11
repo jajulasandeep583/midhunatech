@@ -3,8 +3,8 @@
 > **Maintenance rule:** this guide is updated in the SAME commit as any feature
 > change. If you change behavior, update the matching section here.
 >
-> Last updated: 2026-06-11 (commit: a11y focus fix on Home tiles, harmless
-> console messages documented)
+> Last updated: 2026-06-11 (commit: caching service worker removed, ⟳ hard
+> refresh button, works-on-any-site compatibility matrix)
 
 The Midhunatech PWA is a mobile app served by your Frappe/ERPNext site at
 **`https://yoursite.com/midhunatech`**. Users never see the ERPNext desk —
@@ -255,6 +255,7 @@ Profile → **⚙ App Settings** (System Manager only), or the desk config:
 cd ~/frappe-bench/apps/midhunatech && git pull
 cd ~/frappe-bench
 bench --site yoursite.com migrate
+bench build --app midhunatech
 bench --site yoursite.com clear-cache
 bench restart
 ```
@@ -262,6 +263,46 @@ bench restart
 Users get the new version automatically the next time they open the app
 (the shell cache-busts on every build; an open tab self-reloads once when it
 detects a newer build).
+
+### Caching & the ⟳ refresh button
+There is deliberately **no caching service worker** — every screen reads live
+data from the server, so what users see is always current. The only service
+worker is the push-notification one (it never serves cached content).
+If a device ever looks out of date anyway (e.g. after a server update):
+- tap the **⟳ button** in the Home header, or
+- Profile → **⟳ Check for updates & reload app**
+
+Both wipe all browser caches, remove any stale service workers (keeping the
+push subscription), and reload the app fresh from the server.
+
+## 10b. Works on ANY site — compatibility matrix
+
+Nothing in the app is tied to a particular site: all API calls are relative
+URLs, all display logic reads the site's own metadata, and all configuration
+lives in the site's database. Per feature:
+
+| Feature | Works on a fresh real site? | Needs |
+|---|---|---|
+| Login / Home / tiles / branding | ✅ automatic | — |
+| Native doctype lists + detail (`doc_list`) | ✅ any doctype on the site | — |
+| Per-tile Fields / Filters control | ✅ | — |
+| Create documents (incl. Material Request line items) | ✅ | Create permission |
+| Approvals (list / preview / approve / reject) | ✅ adapts to the site's workflows | at least one **active Workflow** |
+| Reports: table + KPI cards + charts + date/Item/Warehouse filters | ✅ | the Report (ERPNext for the financial ones) |
+| Balance Sheet, P&L, Trial Balance, GL, Stock Balance | ✅ defaults auto-filled from the site's own Company/Fiscal Year | ERPNext |
+| Custom DB Script Reports | ✅ | `server_script_enabled: 1` in **common_site_config.json** |
+| KPI Dashboard (Number Cards) | ✅ | — |
+| Notification feed + bell badge | ✅ | — |
+| Push notifications | ✅ keys self-generate per site | HTTPS, background workers, user toggles once per device |
+| Check-in / Attendance tab | ✅ (optional, `show_attendance`) | — |
+| In-app Settings editor | ✅ | System Manager role |
+| Web-page tiles (`iframe_url` / `webpage`) | ✅ | the Web Page must exist **on that site** (site-specific content, e.g. /san) |
+
+The only genuinely site-specific items are *content*: Web Pages you built on
+one site don't exist on another (export/import them or recreate), and tile
+configuration is per-site by design (seeded with sensible defaults on
+install). Verify any installation in one shot:
+`bench --site <site> execute midhunatech.install.doctor` → must end `0 failed`.
 
 ---
 

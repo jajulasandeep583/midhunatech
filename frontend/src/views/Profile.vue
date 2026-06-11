@@ -56,6 +56,9 @@
             <p>1.0.0 &middot; Frappe v16</p>
           </ion-label>
         </ion-item>
+        <ion-item button detail @click="doHardRefresh">
+          <ion-label color="primary">⟳ Check for updates &amp; reload app</ion-label>
+        </ion-item>
       </ion-list>
 
       <!-- ── Admin (only visible to System Manager / Administrator) ── -->
@@ -154,8 +157,10 @@ import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonContent,
   IonList, IonItem, IonLabel, IonToggle,
 } from "@ionic/vue";
-import { session, appConfig, logout, apiFetch } from "@/data/session.js";
+import { session, appConfig, logout, apiFetch, hardRefresh } from "@/data/session.js";
 import { pushState, enablePush, disablePush } from "@/data/push.js";
+
+function doHardRefresh() { hardRefresh(); }
 
 const router   = useRouter();
 const busy     = ref(false);

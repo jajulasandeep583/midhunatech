@@ -175,6 +175,31 @@ export async function loadConfig(force = false) {
   }
 }
 
+// ── Hard refresh ──────────────────────────────────────────────────────────────
+
+/**
+ * Force-update the whole PWA: wipe every Cache Storage entry, unregister any
+ * stale service workers (the push worker is kept — removing it would drop the
+ * push subscription), then reload from the server with a cache-busting URL.
+ * Wired to the ⟳ button on Home and "Check for updates" in Profile.
+ */
+export async function hardRefresh() {
+  try {
+    if ("caches" in window) {
+      for (const key of await caches.keys()) await caches.delete(key);
+    }
+  } catch { /* cache API unavailable — continue */ }
+  try {
+    const regs = (await navigator.serviceWorker?.getRegistrations?.()) || [];
+    for (const reg of regs) {
+      const url = reg.active?.scriptURL || reg.installing?.scriptURL || "";
+      if (!url.includes("push-sw.js")) await reg.unregister();
+    }
+  } catch { /* no service worker support — continue */ }
+  // bypass any cached HTML for the shell
+  window.location.replace(`/midhunatech/home?r=${Date.now()}`);
+}
+
 // ── Colour helpers ────────────────────────────────────────────────────────────
 
 /** Returns a lightened/darkened version of a hex colour */

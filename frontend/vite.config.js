@@ -4,7 +4,6 @@
 import { defineConfig } from "vite";
 import vue  from "@vitejs/plugin-vue";
 import path from "path";
-import { VitePWA } from "vite-plugin-pwa";
 
 // ── Production asset base path ─────────────────────────────────────────────
 // CRITICAL: must match exactly so Frappe serves assets correctly.
@@ -13,42 +12,16 @@ import { VitePWA } from "vite-plugin-pwa";
 const PROD_BASE = "/assets/midhunatech/frontend/";
 
 export default defineConfig(({ mode }) => ({
+  // NOTE: no service-worker / workbox caching layer on purpose.
+  // A caching SW served STALE app shells and API data on production sites
+  // (its registration scope never matched /midhunatech anyway). Freshness
+  // strategy instead: www/midhunatech.html cache-busts index.js with
+  // ?v=<build mtime>, lazy chunks are content-hashed, the app self-reloads
+  // when it detects a newer build, and users have a ⟳ hard-refresh button.
+  // The only SW shipped is public/push-sw.js (push notifications only, no
+  // fetch interception).
   plugins: [
     vue(),
-    VitePWA({
-      registerType: "autoUpdate",
-      // We supply our own manifest.json in public/ — don't auto-generate
-      manifest: false,
-      // Service worker scope must match our PWA path
-      scope: "/midhunatech",
-      workbox: {
-        globPatterns: ["**/*.{js,css,html}"],
-        // Don't use navigateFallback — Frappe handles routing server-side
-        navigateFallback: null,
-        runtimeCaching: [
-          {
-            // Cache Frappe API responses (NetworkFirst = try network, fall back to cache)
-            urlPattern: /^https?:\/\/.*\/api\/(resource|method)\/.*/i,
-            handler: "NetworkFirst",
-            options: {
-              cacheName:           "frappe-api-cache",
-              networkTimeoutSeconds: 8,
-              expiration: { maxEntries: 100, maxAgeSeconds: 86400 },
-            },
-          },
-          {
-            // Cache uploaded files / images
-            urlPattern: /^https?:\/\/.*\/(files|private)\/.*/i,
-            handler: "CacheFirst",
-            options: {
-              cacheName: "frappe-files-cache",
-              expiration: { maxEntries: 50, maxAgeSeconds: 604800 },
-            },
-          },
-        ],
-      },
-      devOptions: { enabled: false }, // disable SW in dev
-    }),
   ],
 
   resolve: {
