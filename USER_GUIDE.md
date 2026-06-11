@@ -272,7 +272,7 @@ detects a newer build).
 | **App blank / not loading on a production site** | `bench build --app midhunatech && bench restart` — production nginx serves `sites/assets`, which is created by bench build. Then run the doctor (below) |
 | Old UI after an update | Just close and reopen the app (cache-busting is automatic); worst case `bench clear-cache` |
 | Added tile not showing | *Enabled* unticked, or app not refreshed (pull down on Home). Run the doctor |
-| Tile opens "… is not configured" | Set the **DocType** field on that tile row and save |
+| Tile opens "… is not configured" | List tiles: set the **DocType** field. Page tiles (webpage/url/frappe_page): set the **Webpage Route / External URL** — an empty target used to open a blank screen |
 | Report says "Report failed" | Check the user has the report's role; DB Script Reports need `server_script_enabled` in **common** site config |
 | Empty home grid on a fresh site | `bench --site <s> execute midhunatech.install.seed_default_modules` |
 | Approvals tile empty | No active Workflow has a state the user's role can act on — check `/app/workflow` |

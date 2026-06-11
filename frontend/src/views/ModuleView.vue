@@ -58,6 +58,14 @@
         <p>Set the <b>DocType</b> field on this tile in PWA App Config, then save.</p>
       </div>
 
+      <!-- ── iframe tile without a URL ── -->
+      <div v-else-if="kind === 'iframe_url' && !currentMod.url" class="empty-state" style="padding-top:80px;" role="alert">
+        <div class="empty-icon" aria-hidden="true">⚙️</div>
+        <h3>{{ currentMod.label }} is not configured</h3>
+        <p>This tile has no page URL. Set its <b>Webpage Route</b> / <b>External URL</b>
+        (or switch it to a supported module type) in PWA App Config.</p>
+      </div>
+
       <!-- ── IFRAME: frappe_page / iframe_url / webpage / url / form_view ── -->
       <template v-else-if="kind === 'iframe_url'">
         <!-- Loading overlay until iframe fires @load -->
