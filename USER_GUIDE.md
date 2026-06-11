@@ -3,8 +3,8 @@
 > **Maintenance rule:** this guide is updated in the SAME commit as any feature
 > change. If you change behavior, update the matching section here.
 >
-> Last updated: 2026-06-11 (commit: per-tile field/filter control, production
-> doctor command, tile-config fixes)
+> Last updated: 2026-06-11 (commit: a11y focus fix on Home tiles, harmless
+> console messages documented)
 
 The Midhunatech PWA is a mobile app served by your Frappe/ERPNext site at
 **`https://yoursite.com/midhunatech`**. Users never see the ERPNext desk —
@@ -279,6 +279,11 @@ detects a newer build).
 | Push enabled but nothing arrives | Background workers must be running (`supervisorctl status`); needs HTTPS; iPhone: install to home screen first |
 | Push toggle errors "not supported" | Needs HTTPS; on iPhone install to home screen first |
 | Tile opens "Module not found" | Module Key in the config row doesn't match the URL slug |
+
+**Harmless console messages** (not errors, safe to ignore):
+`initHighlighting() is deprecated` comes from Frappe's own website bundle
+(highlight.js), not this app. Real problems show as red **errors** (HTTP 4xx/5xx,
+"Uncaught …"), not deprecation/accessibility warnings.
 
 ## 12. Production health check (doctor)
 

@@ -229,6 +229,9 @@ async function retry() {
 }
 
 function openModule(mod) {
+  // drop focus from the tapped tile BEFORE Ionic hides this page —
+  // a focused element under aria-hidden triggers a browser a11y warning
+  document.activeElement?.blur?.();
   router.push(`/midhunatech/module/${encodeURIComponent(mod.name)}`);
 }
 function openConfig() {
@@ -236,7 +239,11 @@ function openConfig() {
 }
 
 function typeLabel(t) {
-  return { frappe_page: "Frappe", iframe_url: "Web", custom_view: "Built-in", doc_list: "Native", dashboard: "Dashboard" }[t] || t;
+  return {
+    frappe_page: "Frappe", iframe_url: "Web", webpage: "Web", url: "Web",
+    custom_view: "Built-in", doc_list: "Native", doctype: "Native", list_view: "Native",
+    dashboard: "Dashboard", number_card: "KPI", report: "Report",
+  }[t] || t;
 }
 
 const ICON_MAP = {
