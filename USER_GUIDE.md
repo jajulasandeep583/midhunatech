@@ -338,3 +338,30 @@ bench --site yoursite.com execute midhunatech.install.doctor
 
 Run it after every install/update on a live site, and whenever someone
 reports "the app is not loading". Aim for `0 failed`.
+
+### Full diagnosis: doctor + live feature tests
+
+`diagnose` runs everything `doctor` checks **plus** real server-side feature
+tests — it actually executes every enabled tile (reports, lists, approvals,
+notifications, push) as Administrator, and prints environment versions and
+the exact app commit the site is running:
+
+```bash
+bench --site yoursite.com execute midhunatech.install.diagnose
+```
+
+How to read the result:
+
+- A tile **fails here** → the problem is server-side (data, permissions,
+  tile config) — the FAIL line tells you what to fix. It is not the phone.
+- **Everything passes here** but the phone still misbehaves → the problem is
+  the browser cache on that device: tap the ⟳ button, or remove and re-add
+  the home-screen app.
+
+### Status page — when the app itself won't load
+
+Open **`https://yoursite.com/midhunatech_status`** in any browser while
+logged in as a **System Manager**. It is a plain server-rendered page (no PWA
+code at all), so it works even when the frontend is completely broken, and it
+shows the same environment info, installation checks, and feature tests as
+`diagnose`, with PASS/FAIL on every line.

@@ -1,0 +1,73 @@
+{%- extends "templates/web.html" -%}
+{%- block title %}Midhunatech PWA Status{%- endblock -%}
+
+{%- block page_content %}
+<div class="mtst">
+  <h1>Midhunatech PWA — Status</h1>
+  <p class="mtst-sub">Share a screenshot of this whole page when reporting a problem.</p>
+
+  <h2>Environment</h2>
+  <table class="mtst-t">
+    {% for k, v in versions.items() %}
+    <tr><td class="k">{{ k }}</td><td>{{ v }}</td></tr>
+    {% endfor %}
+  </table>
+
+  <h2>Installation checks
+    <span class="pill {{ 'bad' if doctor_failed else 'good' }}">
+      {{ doctor_failed }} failed
+    </span>
+  </h2>
+  <table class="mtst-t">
+    {% for label, ok, fix in doctor %}
+    <tr class="{{ 'ok' if ok else 'fail' }}">
+      <td class="st">{{ "✅" if ok else "❌" }}</td>
+      <td>{{ label }}{% if not ok %}<div class="fix">FIX: {{ fix }}</div>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+
+  <h2>Live feature tests
+    <span class="pill {{ 'bad' if features_failed else 'good' }}">
+      {{ features_failed }} failed
+    </span>
+  </h2>
+  <table class="mtst-t">
+    {% for label, ok, detail in features %}
+    <tr class="{{ 'ok' if ok else 'fail' }}">
+      <td class="st">{{ "✅" if ok else "❌" }}</td>
+      <td>{{ label }}<div class="{{ 'fix' if not ok else 'det' }}">{{ detail }}</div></td>
+    </tr>
+    {% endfor %}
+  </table>
+
+  <p class="mtst-sub">
+    Open the app: <a href="/midhunatech">/midhunatech</a> ·
+    Config: <a href="/app/midhunatech-pwa-config">PWA App Config</a> ·
+    Reload this page after fixing anything.
+  </p>
+</div>
+{%- endblock %}
+
+{%- block style %}
+<style>
+  .navbar, .web-footer, footer, .footer-powered { display: none !important; }
+  body { background: #f1f5f9; }
+  .mtst { max-width: 760px; margin: 0 auto; padding: 24px 16px 60px;
+          font-family: -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .mtst h1 { font-size: 22px; font-weight: 800; color: #0f172a; }
+  .mtst h2 { font-size: 15px; font-weight: 800; color: #334155; margin: 26px 0 8px; }
+  .mtst-sub { font-size: 13px; color: #64748b; }
+  .pill { font-size: 11px; font-weight: 800; border-radius: 999px; padding: 3px 10px; vertical-align: 2px; }
+  .pill.good { background: #dcfce7; color: #15803d; }
+  .pill.bad  { background: #fee2e2; color: #dc2626; }
+  .mtst-t { width: 100%; border-collapse: collapse; background: #fff;
+            border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; }
+  .mtst-t td { padding: 9px 12px; border-bottom: 1px solid #f1f5f9; font-size: 13.5px; color: #1e293b; }
+  .mtst-t td.k { font-weight: 700; color: #64748b; width: 180px; }
+  .mtst-t td.st { width: 30px; }
+  .mtst-t tr.fail td { background: #fff8f8; }
+  .fix { font-size: 12px; color: #dc2626; margin-top: 3px; font-weight: 600; }
+  .det { font-size: 12px; color: #94a3b8; margin-top: 3px; }
+</style>
+{%- endblock %}

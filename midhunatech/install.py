@@ -239,15 +239,26 @@ def doctor():
     """Production health check. Run on any site:
         bench --site <site> execute midhunatech.install.doctor
     Prints PASS/FAIL per check with the exact fix for each failure."""
+    print(f"midhunatech doctor — site: {frappe.local.site}\n")
+    results = collect_doctor()
+    for label, ok, fix in results:
+        print(("  [OK]   " if ok else "  [FAIL] ") + label + ("" if ok else f"\n         FIX: {fix}"))
+    failed = sum(1 for _, ok, _ in results if not ok)
+    print(f"\n{len(results) - failed} passed, {failed} failed.")
+    if failed:
+        print("Fix the FAIL lines above, then run the doctor again.")
+    return {"passed": len(results) - failed, "failed": failed}
+
+
+def collect_doctor():
+    """The doctor's checks as data: [(label, ok, fix)] — reused by the
+    /midhunatech_status page."""
     import os
 
-    okc, fail = [], []
+    results = []
 
     def check(label, cond, fix=""):
-        (okc if cond else fail).append((label, fix))
-        print(("  [OK]   " if cond else "  [FAIL] ") + label + ("" if cond else f"\n         FIX: {fix}"))
-
-    print(f"midhunatech doctor — site: {frappe.local.site}\n")
+        results.append((label, bool(cond), fix))
 
     # 1. built frontend exists inside the app
     app_index = frappe.get_app_path("midhunatech", "public", "frontend", "index.js")
@@ -326,7 +337,109 @@ def doctor():
         check("pywebpush installed", False,
               "bench pip install pywebpush   (or: ./env/bin/pip install pywebpush) + bench restart")
 
-    print(f"\n{len(okc)} passed, {len(fail)} failed.")
-    if fail:
-        print("Fix the FAIL lines above, then run the doctor again.")
-    return {"passed": len(okc), "failed": len(fail)}
+    return results
+
+
+def app_version_info():
+    """Versions + the exact app commit running on this site."""
+    import os
+    import subprocess
+
+    info = {"site": frappe.local.site, "frappe": frappe.__version__}
+    try:
+        import erpnext
+        info["erpnext"] = erpnext.__version__
+    except Exception:
+        info["erpnext"] = "not installed"
+    try:
+        app_dir = os.path.dirname(frappe.get_app_path("midhunatech"))
+        out = subprocess.run(
+            ["git", "-C", app_dir, "log", "-1", "--format=%h %cd %s", "--date=short"],
+            capture_output=True, text=True, timeout=10,
+        )
+        info["midhunatech_commit"] = (out.stdout or out.stderr or "").strip()[:120] or "unknown"
+    except Exception:
+        info["midhunatech_commit"] = "unknown"
+    return info
+
+
+def run_feature_tests():
+    """Exercise every backend feature the PWA uses (as Administrator) and
+    return [(label, ok, detail)] — `detail` carries the REAL error message,
+    so a broken real-site install explains itself."""
+    results = []
+    original_user = frappe.session.user
+    frappe.set_user("Administrator")
+
+    def test(label, fn):
+        try:
+            detail = fn() or "ok"
+            results.append((label, True, str(detail)[:300]))
+        except Exception as e:
+            frappe.clear_messages()
+            results.append((label, False, f"{type(e).__name__}: {str(e)[:300]}"))
+
+    def t_config():
+        from midhunatech.api.pwa import get_config
+        c = get_config()
+        bad = [m["name"] for m in c["modules"]
+               if m["type"] in ("doc_list", "doctype", "list_view") and not m.get("doctype")]
+        out = f"{len(c['modules'])} enabled tiles, build_v={c['build_v']}"
+        if bad:
+            out += f" — TILES WITHOUT DOCTYPE: {bad}"
+        return out
+    test("get_config (app boot)", t_config)
+
+    try:
+        cfg = frappe.get_single("Midhunatech PWA Config")
+        rows = [r for r in cfg.get("modules", []) if r.is_enabled]
+    except Exception:
+        rows = []
+
+    for row in rows:
+        if row.module_type in ("doc_list", "doctype", "list_view"):
+            dt = row.get("doctype_name") or (row.target_url or "").replace("#list/", "")
+            def t_list(dt=dt, fields=row.get("doctype_fields"), filters=row.get("doctype_filters")):
+                from midhunatech.api import data
+                v = data.get_view(dt, fields=fields, filters=filters)
+                lst = data.get_list(dt, page_length=3, fields=fields, filters=filters)
+                return f"{dt}: {len(v['cards'])} cards, {len(lst['rows'])} sample rows"
+            test(f"list tile '{row.label}'", t_list)
+        elif row.module_type == "report" and row.get("report_name"):
+            def t_report(r=row.report_name, f=row.get("report_filters")):
+                from midhunatech.api import reports
+                out = reports.run(r, f or {})
+                return (f"cols={len(out['columns'])} rows={len(out['rows'])} "
+                        f"kpis={len(out['summary'])} chart={'yes' if out['chart'] else 'no'}")
+            test(f"report tile '{row.label}'", t_report)
+
+    def t_approvals():
+        from midhunatech.api import approvals
+        return f"{len(approvals.get_pending())} pending document(s)"
+    test("approvals", t_approvals)
+
+    def t_notifications():
+        from midhunatech.api import notifications
+        return f"{notifications.get_feed()['unread']} unread"
+    test("notification feed", t_notifications)
+
+    def t_push():
+        from midhunatech.api import push
+        return f"VAPID key ready (len {len(push.get_vapid_public_key())})"
+    test("push notifications (server side)", t_push)
+
+    frappe.set_user(original_user)
+    return results
+
+
+def diagnose():
+    """EVERYTHING in one shot — run this when 'nothing works' on a site:
+        bench --site <site> execute midhunatech.install.diagnose
+    Prints versions + doctor checks + live feature tests with real errors."""
+    for k, v in app_version_info().items():
+        print(f"{k}: {v}")
+    print()
+    doctor()
+    print("\nFEATURE TESTS (server-side, as Administrator):")
+    for label, ok, detail in run_feature_tests():
+        print(("  [OK]   " if ok else "  [FAIL] ") + f"{label} — {detail}")
