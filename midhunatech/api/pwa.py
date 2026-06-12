@@ -88,7 +88,10 @@ def get_config():
     Called by the Vue frontend once per session after login.
     Requires authentication (no allow_guest).
     """
-    cfg     = frappe.get_cached_doc("Midhunatech PWA Config")
+    # NOT get_cached_doc: long-running workers can hold a stale cached copy
+    # after the config is edited from another process (seen 2026-06-12 on
+    # ethanol), and this runs once per app boot — a fresh read is cheap.
+    cfg     = frappe.get_doc("Midhunatech PWA Config")
     user    = frappe.get_cached_doc("User", frappe.session.user)
     roles   = [r.role for r in user.get("roles", [])]
 

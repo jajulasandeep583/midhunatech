@@ -126,6 +126,24 @@ On any list tile (`doc_list`) **or report tile** (`report`), set
 - Leave it **blank for automatic mode**: the main fields (title, status,
   amount, date + *In List View* fields) are picked for you.
 
+### Built-in defaults (blank Fields, common doctypes)
+For the most common transactional doctypes a curated set of important fields
+is built in, so tiles look right with zero configuration. Your Fields JSON
+always overrides these.
+
+| Doctype | Default fields |
+|---|---|
+| Sales Invoice | customer, posting_date, due_date, grand_total, outstanding_amount, status |
+| Sales Order | customer, transaction_date, delivery_date, grand_total, status |
+| Purchase Invoice | supplier, posting_date, due_date, grand_total, outstanding_amount, status |
+| Purchase Order | supplier, transaction_date, schedule_date, grand_total, status |
+| Purchase Receipt | supplier, posting_date, grand_total, status |
+| Payment Entry | payment_type, party_type, party, posting_date, paid_amount, status |
+| Journal Entry | voucher_type, posting_date, total_debit, user_remark |
+| Material Request | material_request_type, transaction_date, schedule_date, status |
+
+(Edit `_DEFAULT_FIELDS` in `midhunatech/api/data.py` to change the built-ins.)
+
 Also available per tile — **Filters (JSON)**: e.g. `{"status": "Unpaid"}`
 shows only unpaid invoices; the number cards on top respect the filter too.
 
@@ -186,7 +204,15 @@ Open any `report` tile. The screen renders, top to bottom:
      type, pick a suggestion, the report re-runs for just that item/warehouse;
      ✕ clears the filter.
    - **General Ledger:** Party Type.
-   - Add more in `_REPORT_FILTERS` (`midhunatech/api/reports.py`).
+   - **Custom reports (Script / Query, made in the desk):** their own
+     filters are read automatically — from the Report's *Filters* table, or
+     parsed straight out of the report's **JavaScript** `filters: [...]`
+     definition. Link filters become search boxes, Selects dropdowns, Dates
+     date pickers; the report's own `default:` values (today, month start,
+     user's company, …) are applied. If a mandatory filter still fails, the
+     error shows **with the filter bar still on screen** so it can be fixed.
+   - Add more standard-report filters in `_REPORT_FILTERS`
+     (`midhunatech/api/reports.py`).
 2. **KPI summary cards** — whatever the report publishes (e.g. Balance Sheet:
    Total Asset / Liability / Equity / Profit, shown as ₹ Cr/L).
 3. **Chart** — the report's chart, rendered natively.
@@ -207,7 +233,17 @@ in PWA Config, set **Fields (JSON array)** to the columns you want, in order:
 - Unknown names are dropped safely; if nothing matches (or the JSON is
   invalid) the report falls back to **all** columns — a typo can never blank
   a report.
-- Blank = all columns (as before).
+- Blank = built-in defaults for common reports, all columns otherwise:
+
+| Report | Default columns |
+|---|---|
+| Stock Balance | item_code, warehouse, bal_qty, bal_val |
+| Stock Ledger | date, item_code, warehouse, actual_qty, qty_after_transaction |
+| General Ledger | posting_date, account, debit, credit, balance, voucher_no |
+| Trial Balance | account, debit, credit, closing_debit, closing_credit |
+| Accounts Receivable / Payable | posting_date, party, voucher_no, invoiced, paid, outstanding |
+
+(Edit `_DEFAULT_REPORT_COLUMNS` in `midhunatech/api/reports.py` to change.)
 
 Mandatory filters (company, fiscal year, dates) are auto-filled server-side,
 so standard financial reports run with zero setup. **DB Script Reports**
@@ -250,6 +286,29 @@ Keys are generated automatically per site (stored in `site_config.json`).
 Subscriptions live in the *Midhunatech Push Subscription* doctype; expired
 devices clean themselves up. Requires HTTPS. iPhone: app must be installed
 to the home screen (iOS 16.4+).
+
+### Your own user-based notifications (HRMS-style)
+Configure them exactly like email notifications — same **Notification**
+doctype, different channel:
+
+1. Desk → **Notification** → New.
+2. *Document Type* + *Send Alert On* (New / Save / Submit / Value Change /
+   Days Before-After a date, with an optional *Condition*).
+3. **Channel = "System Notification"** ← this is the key step.
+4. *Recipients*: by a document field (e.g. `allocated_to`, `owner`,
+   `employee`) and/or by Role.
+5. Subject/message support Jinja: `{{ doc.name }}`, `{{ doc.status }}`, …
+
+Each matching event then lands in the recipient's 🔔 in-app feed **and** is
+pushed to their phone (if push is enabled) — leave approved, attendance
+marked, invoice submitted, anything. The same rule can also have an Email
+sibling: create a second Notification with Channel = Email.
+
+Two gotchas:
+- Recipients are matched **by email** — the built-in `Administrator` account
+  never receives system notifications, so always test with a real user.
+- Delivery runs through the background workers — `bench doctor` /
+  `midhunatech.install.doctor` checks they're alive.
 
 ---
 

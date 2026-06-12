@@ -130,6 +130,28 @@ def _clean_text(s):
     return s
 
 
+# Curated default display fields for common transactional doctypes — used
+# when the tile has no Fields (JSON array) configured. The tile's JSON always
+# wins; doctypes not listed here keep the automatic meta-derived display.
+_DEFAULT_FIELDS = {
+    "Sales Invoice":    ["customer", "posting_date", "due_date", "grand_total", "outstanding_amount", "status"],
+    "Sales Order":      ["customer", "transaction_date", "delivery_date", "grand_total", "status"],
+    "Purchase Invoice": ["supplier", "posting_date", "due_date", "grand_total", "outstanding_amount", "status"],
+    "Purchase Order":   ["supplier", "transaction_date", "schedule_date", "grand_total", "status"],
+    "Purchase Receipt": ["supplier", "posting_date", "grand_total", "status"],
+    "Payment Entry":    ["payment_type", "party_type", "party", "posting_date", "paid_amount", "status"],
+    "Journal Entry":    ["voucher_type", "posting_date", "total_debit", "user_remark"],
+    "Material Request": ["material_request_type", "transaction_date", "schedule_date", "status"],
+}
+
+
+def _effective_fields(meta, perm, fields, doctype):
+    """Tile-configured fields win; otherwise the curated defaults for common
+    doctypes; otherwise None (automatic meta-derived display)."""
+    return (_user_fields(meta, perm, fields)
+            or _user_fields(meta, perm, _DEFAULT_FIELDS.get(doctype)))
+
+
 def _user_fields(meta, perm, fields):
     """Tile-configured display fields (JSON array of fieldnames) → sanitized
     ordered list. Unknown, layout, technical and permission-restricted
@@ -204,7 +226,7 @@ def get_view(doctype, label=None, fields=None, filters=None):
     date_field   = _pick_date_field(meta)
     if date_field not in perm:
         date_field = "modified"
-    cfg_fields   = _user_fields(meta, perm, fields)
+    cfg_fields   = _effective_fields(meta, perm, fields, doctype)
     if cfg_fields:
         used = {title_field, status_field, amount_field, date_field, "name"}
         sec_fields = [f for f in cfg_fields if f not in used][:5]
@@ -325,7 +347,7 @@ def get_list(doctype, search=None, start=0, page_length=20, fields=None, filters
     date_field   = _pick_date_field(meta)
     if date_field not in perm:
         date_field = "modified"
-    cfg_fields   = _user_fields(meta, perm, fields)
+    cfg_fields   = _effective_fields(meta, perm, fields, doctype)
     if cfg_fields:
         used = {title_field, status_field, amount_field, date_field, "name"}
         sec_fields = [f for f in cfg_fields if f not in used][:5]
@@ -380,7 +402,7 @@ def get_doc(doctype, name, fields=None):
     doc = frappe.get_doc(doctype, name)
     doc.check_permission("read")
     perm = _permitted_fields(meta)
-    cfg_fields = _user_fields(meta, perm, fields)
+    cfg_fields = _effective_fields(meta, perm, fields, doctype)
 
     title_field = meta.title_field or "name"
     if title_field not in perm:

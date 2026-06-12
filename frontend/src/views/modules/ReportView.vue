@@ -9,15 +9,9 @@
       <p style="margin-top:10px;">Running {{ report }}…</p>
     </div>
 
-    <div v-else-if="error" class="empty-state" style="padding-top:60px;" role="alert">
-      <div class="empty-icon" aria-hidden="true">⚠</div>
-      <h3>Report failed</h3>
-      <p>{{ error }}</p>
-      <ion-button fill="outline" size="small" @click="run()">Try again</ion-button>
-    </div>
-
     <template v-else>
-      <!-- ── filter bar (dates + report-specific filters) ── -->
+      <!-- ── filter bar (dates + report-specific filters) ──
+           shown even when the report errored, so mandatory filters can be fixed -->
       <div v-if="hasDates || filterMeta.length" class="rp-filters">
         <div v-if="hasDates" class="rp-f-row">
           <label class="rp-fl">
@@ -38,6 +32,12 @@
               <option value="">All</option>
               <option v-for="o in selectOptions(fm)" :key="o" :value="o">{{ o }}</option>
             </select>
+            <!-- Date -->
+            <input v-else-if="fm.fieldtype === 'Date'" type="date"
+                   v-model="extra[fm.fieldname]" @change="apply" />
+            <!-- Free text -->
+            <input v-else-if="fm.fieldtype === 'Data'" type="text"
+                   v-model="extra[fm.fieldname]" :placeholder="fm.label" />
             <!-- Link autocomplete -->
             <div v-else class="rp-link">
               <input
@@ -62,6 +62,15 @@
         <button class="rp-apply" :disabled="loading" @click="apply">Apply filters</button>
       </div>
 
+      <!-- ── error (filter bar above stays usable) ── -->
+      <div v-if="error" class="empty-state" style="padding-top:40px;" role="alert">
+        <div class="empty-icon" aria-hidden="true">⚠</div>
+        <h3>Report failed</h3>
+        <p>{{ error }}</p>
+        <ion-button fill="outline" size="small" @click="run()">Try again</ion-button>
+      </div>
+
+      <template v-else>
       <!-- ── summary KPI cards ── -->
       <div v-if="summary.length" class="rp-summary">
         <div v-for="(s, i) in summary" :key="i" class="rp-sum-card" :class="`ind-${s.indicator || 'Blue'}`">
@@ -104,6 +113,7 @@
             </tbody>
           </table>
         </div>
+      </template>
       </template>
     </template>
   </div>
@@ -184,13 +194,13 @@ const hasTree = computed(() => rows.value.some(r => Number(r.indent) > 0));
 
 onMounted(() => run());
 
-async function run(extra = null) {
+async function run(overrides = null) {
   loading.value = true;
   error.value = null;
   try {
     let base = props.filters || {};
     if (typeof base === "string") { try { base = JSON.parse(base || "{}"); } catch { base = {}; } }
-    const filters = { ...base, ...(extra || {}) };
+    const filters = { ...base, ...(overrides || {}) };
     const r = await apiFetch("/api/method/midhunatech.api.reports.run", {
       method: "POST",
       body: JSON.stringify({ report_name: props.report, filters, fields: props.fields || "" }),
@@ -206,12 +216,22 @@ async function run(extra = null) {
     chart.value = d.chart || null;
     message.value = d.message || null;
     filterMeta.value = d.filter_meta || [];
+    // mandatory-filter failures come back as 200 + error so the bar stays usable
+    error.value = d.error || null;
 
     const af = d.applied_filters || {};
-    if (af.from_date && af.to_date) {
+    // custom reports tell us whether they take a from/to date range at all
+    if (af.from_date && af.to_date && d.has_date_range !== 0) {
       hasDates.value = true;
       fromDate.value = String(af.from_date).slice(0, 10);
       toDate.value = String(af.to_date).slice(0, 10);
+    }
+    // prefill filter inputs with the values the report actually ran with
+    for (const fm of filterMeta.value) {
+      const v = af[fm.fieldname];
+      if (extra[fm.fieldname] === undefined && v != null && v !== "") {
+        extra[fm.fieldname] = Array.isArray(v) ? (v[0] ?? "") : String(v);
+      }
     }
     // flip loading off BEFORE drawing: the chart container only exists
     // once the content branch is rendered
@@ -315,8 +335,8 @@ defineExpose({ reload: () => run() });
 .rp-link-list li:hover { background: #f1f5f9; }
 .rp-apply {
   height: 38px; border: none; border-radius: 10px;
-  background: linear-gradient(135deg, var(--ion-color-primary, #6366f1), #8b5cf6);
-  color: #fff; box-shadow: 0 2px 8px rgba(99,102,241,.3);
+  background: linear-gradient(135deg, var(--ion-color-primary, #6366f1), var(--ion-color-primary-tint, #8b5cf6));
+  color: #fff; box-shadow: 0 2px 8px rgba(15,23,42,.18);
   font-size: 13.5px; font-weight: 700; cursor: pointer; -webkit-appearance: none;
 }
 .rp-apply:disabled { opacity: .6; }
