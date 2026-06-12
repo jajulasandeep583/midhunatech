@@ -145,6 +145,123 @@ _DEFAULT_FIELDS = {
 }
 
 
+# Default child tables (+ columns) shown on the detail sheet for common
+# transactional doctypes. The tile's Fields JSON overrides: a bare table
+# fieldname ("items") shows it with automatic columns, dotted entries
+# ("items.qty") pick exact columns in that order.
+_DEFAULT_TABLES = {
+    "Sales Invoice":    {"items": ["item_name", "qty", "uom", "rate", "amount"],
+                         "taxes": ["description", "rate", "tax_amount", "total"]},
+    "Purchase Invoice": {"items": ["item_name", "qty", "uom", "rate", "amount"],
+                         "taxes": ["description", "rate", "tax_amount", "total"]},
+    "Sales Order":      {"items": ["item_name", "qty", "uom", "rate", "amount"]},
+    "Purchase Order":   {"items": ["item_name", "qty", "uom", "rate", "amount"]},
+    "Purchase Receipt": {"items": ["item_name", "qty", "uom", "rate", "amount"]},
+    "Delivery Note":    {"items": ["item_name", "qty", "uom", "rate", "amount"]},
+    "Quotation":        {"items": ["item_name", "qty", "uom", "rate", "amount"]},
+    "Material Request": {"items": ["item_code", "qty", "uom", "warehouse", "schedule_date"]},
+    "Stock Entry":      {"items": ["item_code", "qty", "uom", "s_warehouse", "t_warehouse"]},
+    "Journal Entry":    {"accounts": ["account", "party", "debit_in_account_currency",
+                                      "credit_in_account_currency"]},
+    "Payment Entry":    {"references": ["reference_doctype", "reference_name",
+                                        "total_amount", "allocated_amount"]},
+    "Expense Claim":    {"expenses": ["expense_type", "expense_date", "amount",
+                                      "sanctioned_amount"]},
+}
+
+# Automatic child-column pick order (doctypes/tables not covered above)
+_PREF_CHILD_COLS = (
+    "item_code", "item_name", "qty", "uom", "rate", "amount",
+    "account", "account_head", "party", "debit", "credit",
+    "warehouse", "s_warehouse", "t_warehouse", "schedule_date",
+    "expense_type", "description", "tax_amount", "total",
+)
+
+
+def _split_fields_spec(fields):
+    """The tile's Fields JSON may mix scalar fieldnames with child-table
+    entries: "items" (whole table, automatic columns) or "items.qty"
+    (specific column, order preserved). Returns (scalars, {table: [cols]})."""
+    try:
+        lst = frappe.parse_json(fields) if isinstance(fields, str) else fields
+    except Exception:
+        return None, {}
+    if not isinstance(lst, list):
+        return None, {}
+    scalars, tables = [], {}
+    for fn in lst:
+        fn = str(fn).strip()
+        if "." in fn:
+            t, c = fn.split(".", 1)
+            tables.setdefault(t.strip(), [])
+            if c.strip():
+                tables[t.strip()].append(c.strip())
+        else:
+            scalars.append(fn)
+    return scalars, tables
+
+
+def _detail_tables(meta, doc, spec, doctype):
+    """Child tables for the detail sheet. spec comes from the tile JSON;
+    when empty, the curated defaults for common doctypes are used, then a
+    generic fallback (every visible child table, automatic columns)."""
+    explicit = bool(spec)
+    if not spec:
+        spec = _DEFAULT_TABLES.get(doctype) or {}
+    limit_tables = None if (explicit or doctype in _DEFAULT_TABLES) else 3
+
+    out = []
+    for tf in meta.fields:
+        if tf.fieldtype != "Table" or tf.fieldname in _SKIP:
+            continue
+        if spec and tf.fieldname not in spec:
+            continue
+        if not spec and tf.hidden:
+            continue
+        rows = doc.get(tf.fieldname) or []
+        if not rows:
+            continue
+
+        cmeta = frappe.get_meta(tf.options)
+        cperm = _permitted_fields(cmeta)
+
+        def usable(cdf):
+            return (cdf and cdf.fieldname in cperm and cdf.fieldname not in _SKIP
+                    and cdf.fieldtype not in _LAYOUT and cdf.fieldtype not in _TECH_TYPES
+                    and cdf.fieldtype != "Password")
+
+        cols = []
+        for cn in (spec.get(tf.fieldname) or []):
+            cdf = cmeta.get_field(cn)
+            if usable(cdf) and cdf not in cols:
+                cols.append(cdf)
+        if not cols:
+            # automatic: preferred names first, then In List View, max 6 —
+            # only columns that actually hold a value in at least one row
+            cand = [cmeta.get_field(cn) for cn in _PREF_CHILD_COLS]
+            cand += [df for df in cmeta.fields if df.in_list_view]
+            for cdf in cand:
+                if len(cols) >= 6:
+                    break
+                if not usable(cdf) or cdf in cols:
+                    continue
+                if any(r.get(cdf.fieldname) not in (None, "", 0) for r in rows):
+                    cols.append(cdf)
+        if not cols:
+            continue
+
+        out.append({
+            "fieldname": tf.fieldname,
+            "label":     tf.label or tf.fieldname.replace("_", " ").title(),
+            "count":     len(rows),
+            "columns":   [{"label": c.label or c.fieldname, "fieldtype": c.fieldtype} for c in cols],
+            "rows":      [[_fmt(c, r.get(c.fieldname)) for c in cols] for r in rows[:50]],
+        })
+        if limit_tables and len(out) >= limit_tables:
+            break
+    return out
+
+
 def _effective_fields(meta, perm, fields, doctype):
     """Tile-configured fields win; otherwise the curated defaults for common
     doctypes; otherwise None (automatic meta-derived display)."""
@@ -402,7 +519,18 @@ def get_doc(doctype, name, fields=None):
     doc = frappe.get_doc(doctype, name)
     doc.check_permission("read")
     perm = _permitted_fields(meta)
-    cfg_fields = _effective_fields(meta, perm, fields, doctype)
+    scalars, table_spec = _split_fields_spec(fields)
+    if scalars:
+        # a bare table fieldname ("items") means: show that table, auto columns
+        keep = []
+        for fn in scalars:
+            df = meta.get_field(fn)
+            if df and df.fieldtype == "Table":
+                table_spec.setdefault(fn, [])
+            else:
+                keep.append(fn)
+        scalars = keep
+    cfg_fields = _effective_fields(meta, perm, scalars, doctype)
 
     title_field = meta.title_field or "name"
     if title_field not in perm:
@@ -434,6 +562,7 @@ def get_doc(doctype, name, fields=None):
         "title":  str(doc.get(title_field) or doc.name),
         "status": (doc.get("status") or doc.get("workflow_state") or None),
         "fields": out_fields,
+        "tables": _detail_tables(meta, doc, table_spec, doctype),
     }
 
 

@@ -147,6 +147,39 @@ always overrides these.
 Also available per tile — **Filters (JSON)**: e.g. `{"status": "Unpaid"}`
 shows only unpaid invoices; the number cards on top respect the filter too.
 
+### Line items (Sales Invoice items, JE accounts, …) on the detail sheet
+Tapping a record now also shows its **child tables** — items, taxes,
+accounts — as scrollable mini-tables under the fields.
+
+- **Zero config:** common doctypes have curated defaults built in —
+
+| Doctype | Tables shown (columns) |
+|---|---|
+| Sales/Purchase Invoice | Items (item_name, qty, uom, rate, amount) + Taxes (description, rate, tax_amount, total) |
+| Sales/Purchase Order, Purchase Receipt, Delivery Note, Quotation | Items (item_name, qty, uom, rate, amount) |
+| Material Request | Items (item_code, qty, uom, warehouse, schedule_date) |
+| Stock Entry | Items (item_code, qty, uom, s_warehouse, t_warehouse) |
+| Journal Entry | Accounts (account, party, debit, credit) |
+| Payment Entry | References (reference_doctype, reference_name, total_amount, allocated_amount) |
+| Expense Claim | Expenses (expense_type, expense_date, amount, sanctioned_amount) |
+
+- **Control them from the same Fields (JSON array)** with dotted names.
+  Example — a Sales Invoice tile that shows 4 header fields plus a slim
+  items table with exactly 3 columns:
+
+```json
+["customer", "posting_date", "grand_total", "status",
+ "items.item_name", "items.qty", "items.amount"]
+```
+
+- `"items.qty"` → that column, in that order. A bare `"items"` → the whole
+  table with automatic columns. Tables you don't mention are hidden once
+  you name any table explicitly.
+- Other doctypes (not in the table above) automatically show their visible
+  child tables (max 3) with up to 6 sensible columns.
+- Same safety rules: unknown/permission-restricted columns are dropped,
+  rows cap at 50 per table.
+
 ### Site-wide control (automatic mode)
 Without per-tile Fields, the app derives display from the doctype's meta via
 standard **Customize Form** settings:
@@ -221,12 +254,19 @@ Open any `report` tile. The screen renders, top to bottom:
 
 ### Choosing which report columns show (any report type)
 Works for **every** kind of report — standard (Stock Balance, GL…), Script
-Reports, Query Reports and Report Builder reports. On the report tile's row
-in PWA Config, set **Fields (JSON array)** to the columns you want, in order:
+Reports, Query Reports and Report Builder reports.
+
+**Worked example — slim down Stock Balance to 3 columns:**
+1. Desk → **Midhunatech PWA Config** (or in-app ⚙ App Settings).
+2. Open the *Stock Balance* module row.
+3. In **Fields (JSON array)** paste:
 
 ```json
 ["item_code", "warehouse", "bal_qty"]
 ```
+
+4. Save. Reopen the tile on the phone — table shows exactly Item,
+   Warehouse, Balance Qty. (No rebuild needed — config is live.)
 
 - Match by column **fieldname or label** (case doesn't matter) —
   `"Warehouse"` and `"warehouse"` both work.
@@ -298,6 +338,14 @@ doctype, different channel:
 4. *Recipients*: by a document field (e.g. `allocated_to`, `owner`,
    `employee`) and/or by Role.
 5. Subject/message support Jinja: `{{ doc.name }}`, `{{ doc.status }}`, …
+
+**Worked example — tell an employee their leave was approved:**
+Notification → New · *Document Type* = Leave Application · *Send Alert On*
+= Value Change · *Value Changed* = status · *Condition* =
+`doc.status == "Approved"` · *Channel* = System Notification · *Recipients*
+→ Receiver by Document Field = `employee` (their User via Employee) or
+simply `owner` · Subject = `Leave approved: {{ doc.from_date }} →
+{{ doc.to_date }}` · Save. The employee gets it in the 🔔 feed + as a push.
 
 Each matching event then lands in the recipient's 🔔 in-app feed **and** is
 pushed to their phone (if push is enabled) — leave approved, attendance

@@ -67,7 +67,7 @@
         <div class="empty-icon" aria-hidden="true">⚠</div>
         <h3>Report failed</h3>
         <p>{{ error }}</p>
-        <ion-button fill="outline" size="small" @click="run()">Try again</ion-button>
+        <ion-button fill="outline" size="small" @click="apply">Try again</ion-button>
       </div>
 
       <template v-else>

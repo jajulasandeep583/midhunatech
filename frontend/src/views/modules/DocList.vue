@@ -100,6 +100,27 @@
             <div class="dl-field-lbl">{{ f.label }}</div>
             <div class="dl-field-val">{{ f.value }}</div>
           </div>
+
+          <!-- child tables (items, taxes, accounts, …) -->
+          <div v-for="t in detail.tables || []" :key="t.fieldname" class="dl-tbl-sec">
+            <div class="dl-tbl-title">{{ t.label }} <span class="dl-tbl-count">{{ t.count }}</span></div>
+            <div class="dl-tbl-scroll">
+              <table class="dl-t">
+                <thead>
+                  <tr>
+                    <th v-for="(c, ci) in t.columns" :key="ci"
+                        :class="{ num: isNumCol(c) }">{{ c.label }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(r, ri) in t.rows" :key="ri">
+                    <td v-for="(v, vi) in r" :key="vi"
+                        :class="{ num: isNumCol(t.columns[vi]) }">{{ v }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
         </template>
       </ion-content>
     </ion-modal>
@@ -130,6 +151,9 @@ import {
   IonButtons, IonContent, IonSpinner, IonToast,
 } from "@ionic/vue";
 import { getView, getList, getDoc, badgeClass } from "@/data/docdata.js";
+
+const NUM_COL_TYPES = new Set(["Currency", "Float", "Int", "Percent"]);
+function isNumCol(c) { return !!c && NUM_COL_TYPES.has(c.fieldtype); }
 import DocForm from "@/views/modules/DocForm.vue";
 
 const props = defineProps({
@@ -249,6 +273,31 @@ onMounted(reload);
 
 .dl-search { padding: 4px 0 6px; --border-radius: 14px; --box-shadow: none;
   --background: #fff; }
+
+/* detail child tables (items, taxes, …) */
+.dl-tbl-sec { margin-top: 18px; }
+.dl-tbl-title { font-size: 13px; font-weight: 800; color: #334155; margin-bottom: 8px; }
+.dl-tbl-count {
+  display: inline-block; min-width: 20px; padding: 1px 7px; margin-left: 4px;
+  background: #eef2ff; color: #4338ca; border-radius: 10px;
+  font-size: 11px; font-weight: 800; text-align: center;
+}
+.dl-tbl-scroll {
+  overflow-x: auto; border: 1px solid #e2e8f0; border-radius: 12px; background: #fff;
+  -webkit-overflow-scrolling: touch;
+}
+.dl-t { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; }
+.dl-t th {
+  background: #eef2ff; color: #4338ca; text-align: left; font-weight: 800;
+  padding: 8px 10px; white-space: nowrap; border-bottom: 1px solid #c7d2fe;
+}
+.dl-t td {
+  padding: 7px 10px; border-bottom: 1px solid #f1f5f9; color: #1e293b;
+  white-space: nowrap; background: #fff;
+}
+.dl-t tbody tr:nth-child(even) td { background: #f8fafc; }
+.dl-t tbody tr:last-child td { border-bottom: none; }
+.dl-t th.num, .dl-t td.num { text-align: right; font-variant-numeric: tabular-nums; }
 
 /* record card */
 .dl-item {
