@@ -238,7 +238,8 @@ onMounted(reload);
 .dl-cards::-webkit-scrollbar { display: none; }
 .dl-card {
   flex: 1 0 auto; min-width: 92px;
-  background: #fff; border: 1px solid #e2e8f0; border-radius: 16px;
+  background: linear-gradient(160deg, #fff 30%, #f3f5ff);
+  border: 1px solid #e0e5f5; border-radius: 16px;
   padding: 14px 16px; text-align: center;
   box-shadow: 0 1px 8px rgba(15,23,42,.04);
 }

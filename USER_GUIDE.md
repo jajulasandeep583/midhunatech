@@ -110,8 +110,8 @@ order). Max 3 custom tabs are shown.
 ## 4. Which fields are displayed — and how to change them
 
 ### Per-tile control (recommended)
-On any list tile (`doc_list`), set **Fields (JSON array)** in the PWA Config
-row, e.g. for Sales Invoice:
+On any list tile (`doc_list`) **or report tile** (`report`), set
+**Fields (JSON array)** in the PWA Config row, e.g. for Sales Invoice:
 
 ```json
 ["customer", "posting_date", "grand_total", "status", "outstanding_amount"]
@@ -191,7 +191,23 @@ Open any `report` tile. The screen renders, top to bottom:
    Total Asset / Liability / Equity / Profit, shown as ₹ Cr/L).
 3. **Chart** — the report's chart, rendered natively.
 4. **Table** — sticky header + sticky first column, indented account trees,
-   bold group rows, Indian number format, first 500 rows.
+   bold group rows, zebra striping, Indian number format, first 500 rows.
+
+### Choosing which report columns show (any report type)
+Works for **every** kind of report — standard (Stock Balance, GL…), Script
+Reports, Query Reports and Report Builder reports. On the report tile's row
+in PWA Config, set **Fields (JSON array)** to the columns you want, in order:
+
+```json
+["item_code", "warehouse", "bal_qty"]
+```
+
+- Match by column **fieldname or label** (case doesn't matter) —
+  `"Warehouse"` and `"warehouse"` both work.
+- Unknown names are dropped safely; if nothing matches (or the JSON is
+  invalid) the report falls back to **all** columns — a typo can never blank
+  a report.
+- Blank = all columns (as before).
 
 Mandatory filters (company, fiscal year, dates) are auto-filled server-side,
 so standard financial reports run with zero setup. **DB Script Reports**

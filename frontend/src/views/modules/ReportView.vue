@@ -118,6 +118,9 @@ import { searchLink } from "@/data/docdata.js";
 const props = defineProps({
   report:  { type: String, required: true },
   filters: { type: [String, Object], default: "" },
+  // optional JSON array — which report columns to show, in order
+  // (the tile's "Fields (JSON array)" in PWA App Config)
+  fields:  { type: String, default: "" },
 });
 
 const loading = ref(true);
@@ -190,7 +193,7 @@ async function run(extra = null) {
     const filters = { ...base, ...(extra || {}) };
     const r = await apiFetch("/api/method/midhunatech.api.reports.run", {
       method: "POST",
-      body: JSON.stringify({ report_name: props.report, filters }),
+      body: JSON.stringify({ report_name: props.report, filters, fields: props.fields || "" }),
     });
     if (!r.ok) {
       const e = await r.json().catch(() => ({}));
@@ -287,6 +290,7 @@ defineExpose({ reload: () => run() });
   display: flex; flex-direction: column; gap: 8px;
   background: #fff; border: 1px solid #e2e8f0; border-radius: 14px;
   padding: 10px 12px; margin-bottom: 12px;
+  box-shadow: 0 1px 8px rgba(15,23,42,.05);
 }
 .rp-f-row { display: flex; align-items: flex-end; gap: 8px; }
 .rp-fl { flex: 1; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
@@ -311,7 +315,8 @@ defineExpose({ reload: () => run() });
 .rp-link-list li:hover { background: #f1f5f9; }
 .rp-apply {
   height: 38px; border: none; border-radius: 10px;
-  background: var(--ion-color-primary, #6366f1); color: #fff;
+  background: linear-gradient(135deg, var(--ion-color-primary, #6366f1), #8b5cf6);
+  color: #fff; box-shadow: 0 2px 8px rgba(99,102,241,.3);
   font-size: 13.5px; font-weight: 700; cursor: pointer; -webkit-appearance: none;
 }
 .rp-apply:disabled { opacity: .6; }
@@ -321,19 +326,24 @@ defineExpose({ reload: () => run() });
   display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px;
 }
 .rp-sum-card {
-  background: #fff; border: 1px solid #e2e8f0; border-radius: 14px;
+  border: 1px solid #c7d2fe; border-radius: 14px;
   padding: 12px 13px; border-left: 4px solid #6366f1; min-width: 0;
+  background: linear-gradient(150deg, #eef2ff, #fff 75%);
+  box-shadow: 0 1px 8px rgba(15,23,42,.05);
 }
-.rp-sum-card.ind-Green { border-left-color: #22c55e; }
-.rp-sum-card.ind-Red   { border-left-color: #ef4444; }
-.rp-sum-card.ind-Blue  { border-left-color: #6366f1; }
-.rp-sum-value { font-size: 17px; font-weight: 900; color: #0f172a; letter-spacing: -.3px; word-break: break-word; }
-.rp-sum-label { font-size: 11.5px; font-weight: 600; color: #94a3b8; margin-top: 3px; }
+.rp-sum-card.ind-Green { border-color: #a7f3d0; border-left-color: #22c55e; background: linear-gradient(150deg, #ecfdf5, #fff 75%); }
+.rp-sum-card.ind-Red   { border-color: #fecaca; border-left-color: #ef4444; background: linear-gradient(150deg, #fef2f2, #fff 75%); }
+.rp-sum-card.ind-Blue  { border-color: #c7d2fe; border-left-color: #6366f1; }
+.rp-sum-value { font-size: 17px; font-weight: 900; color: #312e81; letter-spacing: -.3px; word-break: break-word; }
+.rp-sum-card.ind-Green .rp-sum-value { color: #047857; }
+.rp-sum-card.ind-Red   .rp-sum-value { color: #b91c1c; }
+.rp-sum-label { font-size: 11.5px; font-weight: 600; color: #64748b; margin-top: 3px; }
 
 /* ── chart ── */
 .rp-chart-card {
   background: #fff; border: 1px solid #e2e8f0; border-radius: 14px;
   padding: 6px 4px; margin-bottom: 12px; overflow: hidden;
+  box-shadow: 0 1px 8px rgba(15,23,42,.05);
 }
 
 .rp-message {
@@ -349,20 +359,22 @@ defineExpose({ reload: () => run() });
 }
 .rp-t { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12.5px; }
 .rp-t th {
-  position: sticky; top: 0; z-index: 3; background: #f8fafc; text-align: left;
-  padding: 9px 11px; font-weight: 700; color: #64748b; white-space: nowrap;
-  border-bottom: 1px solid #e2e8f0;
+  position: sticky; top: 0; z-index: 3; background: #eef2ff; text-align: left;
+  padding: 9px 11px; font-weight: 800; color: #4338ca; white-space: nowrap;
+  border-bottom: 1px solid #c7d2fe;
 }
 .rp-t th.first { left: 0; z-index: 4; }
 .rp-t td {
   padding: 8px 11px; border-bottom: 1px solid #f1f5f9; color: #1e293b; white-space: nowrap;
   background: #fff;
 }
+/* zebra striping — solid colors so the sticky first column stays opaque */
+.rp-t tbody tr:nth-child(even) td { background: #f8fafc; }
 .rp-t td.first {
   position: sticky; left: 0; z-index: 2;
   max-width: 46vw; overflow: hidden; text-overflow: ellipsis;
   border-right: 1px solid #f1f5f9;
 }
 .rp-t th.num, .rp-t td.num { text-align: right; font-variant-numeric: tabular-nums; }
-.rp-t tr.bold td { font-weight: 800; color: #0f172a; background: #fafbfd; }
+.rp-t tr.bold td { font-weight: 800; color: #312e81; background: #f0f3ff; }
 </style>

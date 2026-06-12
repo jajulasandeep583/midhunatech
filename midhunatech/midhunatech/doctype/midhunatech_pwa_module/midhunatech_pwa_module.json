@@ -134,8 +134,8 @@
    "fieldtype": "Code",
    "options": "JSON",
    "label": "Fields (JSON array)",
-   "depends_on": "eval:['doc_list','doctype','list_view'].includes(doc.module_type)",
-   "description": "Fields shown on list cards & detail, e.g. [\"customer\", \"posting_date\", \"grand_total\"]. Blank = automatic"
+   "depends_on": "eval:['doc_list','doctype','list_view','report'].includes(doc.module_type)",
+   "description": "Fields shown on list cards & detail, e.g. [\"customer\", \"posting_date\", \"grand_total\"]. For report tiles: which report columns to show (fieldname or label), in this order. Blank = automatic"
   },
   {
    "fieldname": "report_name",

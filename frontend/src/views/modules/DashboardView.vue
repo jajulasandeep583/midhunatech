@@ -78,6 +78,9 @@ onMounted(reload);
   position: relative; background: #fff; border: 1px solid #e8edf3; border-radius: 18px;
   padding: 18px 16px 14px; overflow: hidden;
   box-shadow: 0 1px 10px rgba(15,23,42,.04);
+  /* accent tint — browsers without color-mix keep the white fallback above */
+  background: linear-gradient(150deg, color-mix(in srgb, var(--accent, #6366f1) 11%, #fff), #fff 75%);
+  border-color: color-mix(in srgb, var(--accent, #6366f1) 26%, #e8edf3);
 }
 .dash-bar { position: absolute; top: 0; left: 0; right: 0; height: 4px; }
 .dash-val { font-size: 30px; font-weight: 900; letter-spacing: -1.2px; color: #0f172a; line-height: 1; }

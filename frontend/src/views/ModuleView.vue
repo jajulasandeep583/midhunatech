@@ -109,6 +109,7 @@
         :key="currentMod.report || currentMod.url"
         :report="currentMod.report || currentMod.url"
         :filters="parsedReportFilters"
+        :fields="currentMod.fields || ''"
       />
 
       <!-- ── CUSTOM VIEW: dynamic Vue component ── -->

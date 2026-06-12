@@ -32,7 +32,7 @@ _REPORT_FILTERS = {
 
 
 @frappe.whitelist()
-def run(report_name, filters=None):
+def run(report_name, filters=None, fields=None):
     report = frappe.get_doc("Report", report_name)
     if not report.is_permitted():
         frappe.throw(_("Not permitted"), frappe.PermissionError)
@@ -88,6 +88,15 @@ def run(report_name, filters=None):
         elif isinstance(r, dict):
             rows.append(r)
 
+    # Per-tile column control — must run AFTER rows are built, because
+    # list-form rows are mapped to fieldnames positionally from the full
+    # column list.
+    selected = _select_columns(columns, fields)
+    if selected is not columns:
+        columns = selected
+        keep = {c["fieldname"] for c in columns} | {"indent", "bold", "currency"}
+        rows = [{k: v for k, v in r.items() if k in keep} for r in rows]
+
     return {
         "columns": columns,
         "rows": rows,
@@ -97,6 +106,35 @@ def run(report_name, filters=None):
         "applied_filters": applied,
         "filter_meta": filter_meta,
     }
+
+
+def _select_columns(columns, fields):
+    """Per-tile column control — same idea as doctype_fields on doc_list
+    tiles: the module row's Fields JSON array picks which report columns
+    show, in that order. Names match column fieldname OR label,
+    case-insensitively; unknown names are dropped. An empty/invalid
+    selection (or one matching nothing) keeps all columns, so a typo can
+    never blank a report."""
+    if isinstance(fields, str):
+        try:
+            fields = json.loads(fields or "[]")
+        except Exception:
+            fields = []
+    if not fields or not isinstance(fields, (list, tuple)):
+        return columns
+
+    by_key = {}
+    for c in columns:
+        for k in (c.get("fieldname"), c.get("label")):
+            if k:
+                by_key.setdefault(str(k).strip().lower(), c)
+
+    picked = []
+    for f in fields:
+        c = by_key.get(str(f).strip().lower())
+        if c and c not in picked:
+            picked.append(c)
+    return picked or columns
 
 
 def _merge_defaults(filters):
