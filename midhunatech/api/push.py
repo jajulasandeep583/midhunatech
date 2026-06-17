@@ -171,6 +171,33 @@ def _enqueue_send(users, title, body, url=None, tag=None):
 
 # ── hooks (doc_events) ───────────────────────────────────────────────────────
 
+def _create_approval_logs(users, ref_dt, ref_name, state):
+    """Write an in-app Notification Log (system notification) for each approver
+    so the approval shows in the PWA bell feed, not just as a transient push.
+    Sets a flag so the Notification Log after_insert hook does not double-push."""
+    if not (ref_dt and ref_name):
+        return
+    subject = _("Approval required: {0} {1}").format(ref_dt, ref_name)
+    body = (ref_dt + " " + ref_name) + (f" is now {state}" if state else "") + " and needs your approval."
+    frappe.flags.mt_skip_push = True
+    try:
+        for u in users:
+            try:
+                frappe.get_doc({
+                    "doctype": "Notification Log",
+                    "for_user": u,
+                    "subject": subject,
+                    "email_content": body,
+                    "type": "Alert",
+                    "document_type": ref_dt,
+                    "document_name": ref_name,
+                }).insert(ignore_permissions=True)
+            except Exception:
+                frappe.log_error(frappe.get_traceback(), "Midhunatech approval log")
+    finally:
+        frappe.flags.mt_skip_push = False
+
+
 def notify_workflow_action(doc, method=None):
     """A Workflow Action was created → tell everyone who can approve.
     Never raises — a push failure must not block the workflow."""
@@ -192,6 +219,7 @@ def notify_workflow_action(doc, method=None):
             return
         ref_dt, ref_name = doc.get("reference_doctype"), doc.get("reference_name")
         state = doc.get("workflow_state") or ""
+        _create_approval_logs(users, ref_dt, ref_name, state)
         _enqueue_send(
             users,
             title=_("Approval required"),
@@ -207,6 +235,8 @@ def notify_notification_log(doc, method=None):
     """Mirror Frappe in-app notifications (mentions, assignments, alerts)
     as push notifications. Never raises."""
     try:
+        if frappe.flags.get("mt_skip_push"):
+            return
         user = doc.get("for_user")
         if not user or user == frappe.session.user:
             return

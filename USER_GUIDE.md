@@ -317,7 +317,9 @@ and the doctype is supported:
 
 **What arrives:**
 - *Approval required* — when a document enters a state the user's role can
-  act on. Tapping opens the document's approval screen directly.
+  act on. Lands in the 🔔 bell feed **and** pushes to the phone. Tapping opens
+  the document's approval screen directly. (Automatic for every active
+  Workflow — no rule needed.)
 - Frappe notifications (mentions, assignments, alerts) — tapping opens the
   in-app notification feed.
 
@@ -341,8 +343,16 @@ exists):
 | Sales Order Submitted | on Submit | owner |
 | Material Request Submitted | on Submit | owner |
 | Purchase Order Submitted | on Submit | owner |
+| Delivery Note Submitted | on Submit | owner |
 | Leave Application Submitted | on Submit | `leave_approver` |
 | Task status changed | Value Change → status | owner |
+
+**Workflow approvals are automatic — no rule needed.** Any document with an
+active **Workflow** (Sales Order, Material Request, Delivery Note, Sales
+Invoice, …): the moment it enters a state someone's role can approve, every
+eligible approver gets a **🔔 bell-feed system notification** *and* a push
+("Approval required: …"). This is built into the Workflow Action hook, so it
+works for every workflow on the site without configuring anything.
 
 Re-seed anytime: `bench --site <site> execute
 midhunatech.install.seed_default_notifications` (idempotent).

@@ -465,6 +465,8 @@ DEFAULT_NOTIFICATIONS = [
      "Material Request {{ doc.name }} ({{ doc.material_request_type }}) was submitted."),
     ("Purchase Order Submitted", "Purchase Order", "Submit", None, "owner", None,
      "Purchase Order {{ doc.name }} for {{ doc.supplier }} was submitted."),
+    ("Delivery Note Submitted", "Delivery Note", "Submit", None, "owner", None,
+     "Delivery Note {{ doc.name }} for {{ doc.customer }} was submitted."),
     ("Leave Application Submitted", "Leave Application", "Submit", None, "leave_approver", None,
      "Leave Application {{ doc.name }} from {{ doc.employee_name }} awaits your approval."),
     ("Task Assigned To You", "Task", "Value Change", "status", None, None,
