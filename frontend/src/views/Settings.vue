@@ -54,6 +54,19 @@
           </label>
         </div>
 
+        <!-- ── Notifications & alerts ── -->
+        <div class="section-title">Alerts</div>
+        <div class="st-nav" role="button" tabindex="0"
+             @click="$router.push('/midhunatech/notify-settings')"
+             @keyup.enter="$router.push('/midhunatech/notify-settings')">
+          <span class="st-mod-icon">🔔</span>
+          <div class="st-mod-info">
+            <div class="st-mod-label">Notifications &amp; scheduled reports</div>
+            <div class="st-mod-sub">Alerts on document events · auto-email reports</div>
+          </div>
+          <span class="st-nav-chev">›</span>
+        </div>
+
         <!-- ── Modules ── -->
         <div class="section-title">Tiles &amp; tabs ({{ mods.length }})</div>
         <div class="st-hint">
@@ -278,4 +291,11 @@ async function save() {
   font-size: 14px; font-weight: 700; color: #64748b; cursor: pointer;
 }
 .st-err { margin: 12px 16px; background: #fef2f2; color: #dc2626; font-size: 13px; border-radius: 10px; padding: 10px 12px; }
+
+.st-nav { display:flex; align-items:center; gap:11px; background:#fff; border:1px solid #e2e8f0; border-radius:14px; padding:12px; margin:0 16px 8px; cursor:pointer; }
+.st-nav .st-mod-icon { font-size:20px; width:38px; height:38px; display:flex; align-items:center; justify-content:center; background:#f1f5f9; border-radius:10px; }
+.st-nav .st-mod-info { flex:1; min-width:0; }
+.st-nav .st-mod-label { font-size:14px; font-weight:700; color:#1e293b; }
+.st-nav .st-mod-sub { font-size:11.5px; color:#94a3b8; margin-top:1px; }
+.st-nav-chev { font-size:24px; color:#cbd5e1; font-weight:700; }
 </style>

@@ -24,6 +24,7 @@ const routes = [
       { path: "profile", name: "Profile", component: () => import("@/views/Profile.vue") },
       { path: "notifications", name: "Notifications", component: () => import("@/views/Notifications.vue") },
       { path: "settings", name: "Settings", component: () => import("@/views/Settings.vue") },
+      { path: "notify-settings", name: "NotifySettings", component: () => import("@/views/NotifySettings.vue") },
       // module opened from a bottom-nav tab — keeps the tab bar visible
       { path: "m/:slug", name: "TabModule", component: () => import("@/views/ModuleView.vue") },
     ],

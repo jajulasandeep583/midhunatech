@@ -44,6 +44,11 @@ def after_install():
         frappe.log_error(frappe.get_traceback(), "midhunatech: seed_default_modules failed")
 
     try:
+        seed_default_notifications()
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "midhunatech: seed_default_notifications failed")
+
+    try:
         from midhunatech.setup.web_pages import create_pages
         create_pages()  # creates About/Notices web pages + links them as modules
     except Exception:
@@ -443,3 +448,69 @@ def diagnose():
     print("\nFEATURE TESTS (server-side, as Administrator):")
     for label, ok, detail in run_feature_tests():
         print(("  [OK]   " if ok else "  [FAIL] ") + f"{label} — {detail}")
+
+
+# ── Default notification rules ──────────────────────────────────────────────────
+# Event-driven alerts seeded on install. Each has send_system_notification=1 so it
+# lands in the PWA in-app feed + web push (see api/push.py). Guarded by doctype /
+# field existence so HRMS/ERPNext-only rules are skipped on sites without them.
+# (subject, doctype, event, value_changed, recipient_field, recipient_role, message)
+DEFAULT_NOTIFICATIONS = [
+    ("Sales Order Submitted", "Sales Order", "Submit", None, "owner", None,
+     "Sales Order {{ doc.name }} for {{ doc.customer }} was submitted "
+     "(Total: {{ doc.get_formatted('grand_total') }})."),
+    ("Sales Order Pending Approval", "Sales Order", "Value Change", "workflow_state", "owner", None,
+     "Sales Order {{ doc.name }} is now **{{ doc.workflow_state }}** and needs attention."),
+    ("Material Request Submitted", "Material Request", "Submit", None, "owner", None,
+     "Material Request {{ doc.name }} ({{ doc.material_request_type }}) was submitted."),
+    ("Purchase Order Submitted", "Purchase Order", "Submit", None, "owner", None,
+     "Purchase Order {{ doc.name }} for {{ doc.supplier }} was submitted."),
+    ("Leave Application Submitted", "Leave Application", "Submit", None, "leave_approver", None,
+     "Leave Application {{ doc.name }} from {{ doc.employee_name }} awaits your approval."),
+    ("Task Assigned To You", "Task", "Value Change", "status", None, None,
+     "Task {{ doc.name }}: {{ doc.subject }} is now {{ doc.status }}."),
+]
+
+
+def seed_default_notifications():
+    """Idempotently create the default Notification rules. Re-runnable:
+        bench --site <site> execute midhunatech.install.seed_default_notifications
+    Skips any whose DocType (or value_changed / recipient field) is missing."""
+    if not frappe.db.exists("DocType", "Notification"):
+        return []
+    made = []
+    for subject, doctype, event, value_changed, rfield, rrole, message in DEFAULT_NOTIFICATIONS:
+        if not frappe.db.exists("DocType", doctype):
+            continue
+        if frappe.db.exists("Notification", {"subject": subject, "document_type": doctype}):
+            continue
+        meta = frappe.get_meta(doctype)
+        if value_changed and not meta.get_field(value_changed):
+            continue
+        if rfield and rfield != "owner" and not meta.get_field(rfield):
+            continue
+        try:
+            doc = frappe.new_doc("Notification")
+            doc.subject = subject
+            doc.document_type = doctype
+            doc.event = event
+            doc.channel = "System Notification"
+            doc.send_system_notification = 1
+            doc.is_standard = 0
+            doc.enabled = 1
+            doc.message_type = "Markdown"
+            doc.message = message
+            if value_changed:
+                doc.value_changed = value_changed
+            if rrole:
+                doc.append("recipients", {"receiver_by_role": rrole})
+            else:
+                doc.append("recipients", {"receiver_by_document_field": rfield or "owner"})
+            doc.insert(ignore_permissions=True)
+            made.append(subject)
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), "midhunatech: seed_default_notifications")
+    if made:
+        frappe.db.commit()
+    print(f"Seeded {len(made)} notification rule(s): {', '.join(made) or '(none new)'}")
+    return made

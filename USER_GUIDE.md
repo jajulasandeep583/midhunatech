@@ -327,36 +327,66 @@ Subscriptions live in the *Midhunatech Push Subscription* doctype; expired
 devices clean themselves up. Requires HTTPS. iPhone: app must be installed
 to the home screen (iOS 16.4+).
 
-### Your own user-based notifications (HRMS-style)
-Configure them exactly like email notifications — same **Notification**
-doctype, different channel:
+### Notification rules & scheduled reports (no desk — HRMS-style)
 
-1. Desk → **Notification** → New.
-2. *Document Type* + *Send Alert On* (New / Save / Submit / Value Change /
-   Days Before-After a date, with an optional *Condition*).
-3. **Channel = "System Notification"** ← this is the key step.
-4. *Recipients*: by a document field (e.g. `allocated_to`, `owner`,
-   `employee`) and/or by Role.
-5. Subject/message support Jinja: `{{ doc.name }}`, `{{ doc.status }}`, …
+**Profile → ⚙ App Settings → Alerts** (System Manager only). Two tabs, both
+configured entirely on the phone — no desk, no code.
 
-**Worked example — tell an employee their leave was approved:**
-Notification → New · *Document Type* = Leave Application · *Send Alert On*
-= Value Change · *Value Changed* = status · *Condition* =
-`doc.status == "Approved"` · *Channel* = System Notification · *Recipients*
-→ Receiver by Document Field = `employee` (their User via Employee) or
-simply `owner` · Subject = `Leave approved: {{ doc.from_date }} →
-{{ doc.to_date }}` · Save. The employee gets it in the 🔔 feed + as a push.
+**Defaults shipped on install.** A fresh site already has these alerts (each
+appears in the 🔔 feed + push for the recipient; only seeded if the doctype
+exists):
 
-Each matching event then lands in the recipient's 🔔 in-app feed **and** is
-pushed to their phone (if push is enabled) — leave approved, attendance
-marked, invoice submitted, anything. The same rule can also have an Email
-sibling: create a second Notification with Channel = Email.
+| Alert | When | Goes to |
+|-------|------|---------|
+| Sales Order Submitted | on Submit | owner |
+| Material Request Submitted | on Submit | owner |
+| Purchase Order Submitted | on Submit | owner |
+| Leave Application Submitted | on Submit | `leave_approver` |
+| Task status changed | Value Change → status | owner |
+
+Re-seed anytime: `bench --site <site> execute
+midhunatech.install.seed_default_notifications` (idempotent).
+
+**Tab 1 — Alerts.** Tap **＋ New alert**:
+
+1. *Title* — e.g. "Sales Order pending approval".
+2. *Document type* — start typing (Sales Order, Material Request, …).
+3. *When (trigger)* — Created / Saved / Submitted / **A field changes**
+   (e.g. `workflow_state`) / Days before-after a date.
+4. *Send to* — add one or more recipients, each either a **Doc field**
+   (Owner, the doc's approver/user field) or a **Role** (e.g. Sales Manager).
+5. *Channel* — **In-app + push only**, or **Email + in-app + push**.
+6. *Message* — Markdown + Jinja (`{{ doc.name }}`, `{{ doc.workflow_state }}`).
+7. Optional *Condition* — Python, e.g. `doc.grand_total > 100000`.
+
+Toggle any alert on/off with the switch; tap it to edit; **Delete** inside the
+editor. Every match lands in the recipient's 🔔 feed **and** pushes to their
+phone (if push is on). Channel = Email also mails it.
+
+> **Worked example — Sales Order sent for approval → notify the approver:**
+> New alert · Document type = `Sales Order` · When = *A field changes* →
+> `workflow_state` · Send to → Role = `Sales Manager` (or Doc field =
+> the approver) · Channel = In-app + push · Condition (optional)
+> `doc.workflow_state == "Pending Approval"` · Save.
+> (If you run a **Workflow**, approval pushes also fire automatically via the
+> built-in Workflow Action hook — no rule needed.)
+
+**Tab 2 — Scheduled Reports.** Email any report automatically. Tap **＋ New
+scheduled report**: pick the *Report*, *Frequency* (Daily / Weekdays / Weekly
++ day / Monthly), *Format* (HTML / XLSX / CSV / PDF), *Email to* (comma
+separated), max rows, "only send if there is data", and optional *Filters*
+JSON. Backed by Frappe's native **Auto Email Report**; delivered by the
+scheduler (keep it enabled — the doctor checks this).
 
 Two gotchas:
 - Recipients are matched **by email** — the built-in `Administrator` account
   never receives system notifications, so always test with a real user.
-- Delivery runs through the background workers — `bench doctor` /
+- Delivery runs through the background workers + scheduler —
   `midhunatech.install.doctor` checks they're alive.
+
+*Advanced:* these are plain Frappe **Notification** / **Auto Email Report**
+records — power users can still fine-tune them in the desk
+(`/app/notification`, `/app/auto-email-report`).
 
 ---
 
