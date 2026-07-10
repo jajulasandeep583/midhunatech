@@ -28,3 +28,16 @@ app.use(router);
 
 // Wait for router to be ready before mounting (Ionic requirement)
 router.isReady().then(() => app.mount("#app"));
+
+// Register the app service worker (scoped to /midhunatech) so the PWA is
+// installable — Chromium requires a SW with a fetch handler controlling the
+// manifest scope. Served from the site root so it can claim "/midhunatech".
+// Network-first (see the SW), so it never serves a stale shell. Failure is
+// non-fatal: the app works fine, the install banner just won't show.
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker
+      .register("/midhunatech-sw.js", { scope: "/midhunatech" })
+      .catch((err) => console.warn("[pwa] app SW registration failed", err));
+  });
+}

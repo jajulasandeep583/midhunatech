@@ -39,9 +39,24 @@ bench --site yoursite.com execute midhunatech.install.doctor
   push notifications (service workers need a secure origin).
 
 ### Install on the phone
-Open `https://yoursite.com/midhunatech` in Chrome (Android) or Safari (iPhone)
-→ browser menu → **Add to Home screen / Install app**. On iPhone, push
-notifications only work after the app is added to the home screen.
+Just open `https://yoursite.com/midhunatech` in the phone browser — a blue
+**"📲 Install … for one-tap access"** banner slides down at the top:
+
+- **Android / desktop Chrome, Edge:** tap **Install** → the browser's native
+  install dialog appears → the app lands on the home screen and opens fullscreen.
+- **iPhone / Safari:** the banner instead reads *"tap Share, then Add to Home
+  Screen"* (iOS has no one-tap install). Push notifications only work after the
+  app is added to the home screen this way.
+
+The banner hides itself once the app is installed, or if the user dismisses it
+(✕). You can still install any time from the browser menu → **Install app /
+Add to Home screen**.
+
+> Requires HTTPS (the install prompt never appears on a plain `http://` address —
+> this is a browser rule, not an app setting). Installability is powered by a
+> tiny service worker served at `/midhunatech-sw.js` (network-first, so it never
+> serves a stale screen) plus the web manifest — both ship with the app, no
+> server config needed.
 
 ---
 
