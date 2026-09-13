@@ -16,7 +16,7 @@
  * shells) and force-reload every open client — so a browser stuck on an old
  * cached copy of the app heals itself on its next visit.
  */
-var SW_VERSION = "mt-app-v3";
+var SW_VERSION = "mt-app-v4";
 var SHELL_CACHE = "midhunatech-shell-" + SW_VERSION;
 var OFFLINE_URL = "/midhunatech";
 
@@ -31,12 +31,17 @@ self.addEventListener("install", function (e) {
 self.addEventListener("activate", function (e) {
   e.waitUntil(
     caches.keys().then(function (keys) {
+      // stale caches present = this is an UPDATE over an older version;
+      // a brand-new install must NOT reload pages (it would wipe a login
+      // form the user is typing into)
+      var isUpdate = keys.some(function (k) { return k !== SHELL_CACHE; });
       return Promise.all(keys.map(function (k) {
-        if (k !== SHELL_CACHE) return caches.delete(k);   // nuke ALL stale caches
-      }));
-    }).then(function () {
-      return self.clients.claim();
-    }).then(function () {
+        if (k !== SHELL_CACHE) return caches.delete(k);
+      })).then(function () { return isUpdate; });
+    }).then(function (isUpdate) {
+      return self.clients.claim().then(function () { return isUpdate; });
+    }).then(function (isUpdate) {
+      if (!isUpdate) return;
       // Reload every open page so no tab keeps running a stale bundle.
       return self.clients.matchAll({ type: "window" }).then(function (clients) {
         return Promise.all(clients.map(function (c) {

@@ -205,6 +205,15 @@ def change_password(old_password, new_password):
 
 
 @frappe.whitelist()
+def get_build():
+    """Current frontend build version — the app polls this and reloads
+    itself when a newer build is deployed (long-lived tabs never navigate,
+    so the service-worker update path alone can't reach them)."""
+    from midhunatech.www.midhunatech import _build_version
+    return {"build_v": _build_version()}
+
+
+@frappe.whitelist()
 def get_csrf():
     """Fresh CSRF token for the logged-in session — lets a long-open PWA
     tab recover from a stale token without reloading the page."""

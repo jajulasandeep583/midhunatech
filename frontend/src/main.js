@@ -29,6 +29,15 @@ app.use(router);
 // Wait for router to be ready before mounting (Ionic requirement)
 router.isReady().then(() => app.mount("#app"));
 
+// Self-update: whenever the app becomes visible (and every 5 minutes while
+// open), compare the running build with the server's and hard-refresh on
+// mismatch — no tab can stay stale.
+import { checkBuild } from "@/data/session.js";
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") checkBuild();
+});
+setInterval(checkBuild, 5 * 60 * 1000);
+
 // Register the app service worker (scoped to /midhunatech) so the PWA is
 // installable — Chromium requires a SW with a fetch handler controlling the
 // manifest scope. Served from the site root so it can claim "/midhunatech".

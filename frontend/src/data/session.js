@@ -34,6 +34,22 @@ export function csrf() {
   return session.csrf || window.frappe?.csrf_token || "";
 }
 
+/** Poll the server's build version (throttled to once a minute) and
+ *  hard-refresh when a newer build is deployed. Long-lived tabs never
+ *  navigate, so this is the only reliable way they pick up updates. */
+let lastBuildCheck = 0;
+export async function checkBuild() {
+  const now = Date.now();
+  if (!boot.build_v || now - lastBuildCheck < 60000) return;
+  lastBuildCheck = now;
+  try {
+    const r = await fetch("/api/method/midhunatech.api.pwa.get_build",
+                          { credentials: "include" });
+    const b = (await r.json())?.message?.build_v;
+    if (b && String(b) !== String(boot.build_v)) await hardRefresh();
+  } catch { /* offline — try again on the next check */ }
+}
+
 /** Authenticated fetch — adds credentials + CSRF header.
  *  If the server rejects our CSRF token (a tab left open across a server
  *  restart / re-login holds a stale one, and every POST then fails with
@@ -162,12 +178,13 @@ export async function loadConfig(force = false) {
     const c = d.message;
 
     // self-update: if the server has a newer build than the one this page
-    // booted with, reload once — even a tab that was never closed catches up.
-    if (c.build_v && boot.build_v && c.build_v !== boot.build_v) {
+    // booted with, hard-refresh once (clears caches + old SW) — even a tab
+    // that was never closed catches up.
+    if (c.build_v && boot.build_v && String(c.build_v) !== String(boot.build_v)) {
       const k = `mt_reloaded_${c.build_v}`;
       if (!sessionStorage.getItem(k)) {
         sessionStorage.setItem(k, "1");
-        window.location.reload();
+        await hardRefresh();
         return;
       }
     }
