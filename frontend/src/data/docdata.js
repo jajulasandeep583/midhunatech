@@ -73,6 +73,9 @@ export const submitDoc = (doctype, name) =>
 export const generateEinvoice = (name) =>
   callPost("midhunatech.api.data.generate_einvoice", { name });
 
+export const generateEwaybill = (name) =>
+  callPost("midhunatech.api.data.generate_ewaybill", { name });
+
 export const getPaymentMeta = (doctype, name) =>
   call("midhunatech.api.data.get_payment_meta", { doctype, name });
 

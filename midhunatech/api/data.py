@@ -733,6 +733,7 @@ def get_doc(doctype, name, fields=None):
         "can_submit": int(bool(meta.is_submittable and doc.docstatus == 0
                                and frappe.has_permission(doctype, "submit", doc=doc))),
         "can_einvoice": _einvoice_available(doc),
+        "can_ewaybill": _ewaybill_available(doc),
         "can_pay": _can_pay(doc),
         "fields": out_fields,
         "tables": _detail_tables(meta, doc, table_spec, doctype),
@@ -1035,6 +1036,10 @@ def create_doc(doctype, values):
     if meta.has_field("company") and not doc.get("company"):
         doc.company = (frappe.defaults.get_user_default("Company")
                        or frappe.db.get_single_value("Global Defaults", "default_company"))
+    # same-currency default the desk UI sets client-side (e.g. HRMS Expense
+    # Claim makes exchange_rate mandatory)
+    if meta.has_field("exchange_rate") and not doc.get("exchange_rate"):
+        doc.exchange_rate = 1
 
     if doctype in _PARTY_FORM:
         _apply_party_gstin(doc, (values or {}).get("_gstin"))
@@ -1225,6 +1230,34 @@ def submit_doc(doctype, name):
     doc.submit()
     frappe.db.commit()
     return {"name": doc.name, "docstatus": doc.docstatus}
+
+
+def _ewaybill_available(doc):
+    """1 when the e-Way Bill button should show: submitted Sales Invoice,
+    no e-way bill yet, and india_compliance says one is applicable."""
+    if doc.doctype != "Sales Invoice" or doc.docstatus != 1 or doc.get("ewaybill"):
+        return 0
+    try:
+        from india_compliance.gst_india.utils.e_waybill import EWaybillData
+        EWaybillData(doc).validate_applicability()
+        return 1
+    except ImportError:
+        return 0
+    except Exception:
+        return 0
+
+
+@frappe.whitelist()
+def generate_ewaybill(name):
+    """Generate the e-Way Bill for a submitted Sales Invoice through
+    india_compliance (same GST API credentials as e-Invoice)."""
+    frappe.has_permission("Sales Invoice", "submit", doc=name, throw=True)
+    try:
+        from india_compliance.gst_india.utils.e_waybill import generate_e_waybill
+    except ImportError:
+        frappe.throw(_("India Compliance is not installed on this site."))
+    generate_e_waybill(doctype="Sales Invoice", docname=name)
+    return {"ewaybill": frappe.db.get_value("Sales Invoice", name, "ewaybill")}
 
 
 @frappe.whitelist()

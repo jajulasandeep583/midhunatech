@@ -51,6 +51,8 @@ def setup():
     s.sandbox_mode = 1
     s.enable_e_invoice = 1
     s.auto_generate_e_invoice = 0
+    if s.meta.has_field("enable_e_waybill"):
+        s.enable_e_waybill = 1
     if s.meta.has_field("e_invoice_applicable_from"):
         s.e_invoice_applicable_from = "2026-01-01"
     if s.meta.has_field("nil_exempt_e_invoice_treatment"):

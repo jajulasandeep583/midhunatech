@@ -102,6 +102,8 @@
                       @click="doSubmit">{{ acting === "submit" ? "Submitting…" : "✓ Submit" }}</button>
               <button v-if="detail.can_einvoice" class="dl-act" :disabled="acting"
                       @click="doEinvoice">{{ acting === "einv" ? "Generating…" : "🧾 e-Invoice" }}</button>
+              <button v-if="detail.can_ewaybill" class="dl-act" :disabled="acting"
+                      @click="doEwaybill">{{ acting === "ewb" ? "Generating…" : "🚚 e-Way Bill" }}</button>
               <button v-if="detail.can_pay" class="dl-act" :class="{ on: payOpen }"
                       @click="togglePay">💰 Payment</button>
               <button v-if="view.can_print" class="dl-act" @click="openPrint">🖨️ Print</button>
@@ -205,7 +207,7 @@ import {
 } from "@ionic/vue";
 import {
   getView, getList, getDoc, emailDoc, submitDoc, generateEinvoice,
-  getPaymentMeta, recordPayment, badgeClass,
+  generateEwaybill, getPaymentMeta, recordPayment, badgeClass,
 } from "@/data/docdata.js";
 
 const NUM_COL_TYPES = new Set(["Currency", "Float", "Int", "Percent"]);
@@ -320,6 +322,21 @@ async function doSubmit() {
   } catch (e) {
     actErr.value = true;
     actNote.value = e.message || "Could not submit.";
+  } finally {
+    acting.value = "";
+  }
+}
+
+async function doEwaybill() {
+  acting.value = "ewb";
+  actNote.value = ""; actErr.value = false;
+  try {
+    const r = await generateEwaybill(detail.value.name);
+    actNote.value = r.ewaybill ? `e-Way Bill ${r.ewaybill} generated` : "e-Way Bill generated";
+    detail.value = await getDoc(props.doctype, detail.value.name, props.fields);
+  } catch (e) {
+    actErr.value = true;
+    actNote.value = e.message || "Could not generate e-Way Bill.";
   } finally {
     acting.value = "";
   }

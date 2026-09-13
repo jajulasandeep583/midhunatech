@@ -20,6 +20,7 @@ TILES = [
     ("Item", None), ("Customer", None), ("Supplier", None), ("Quotation", None),
     ("Sales Order", None), ("Sales Invoice", None),
     ("Purchase Invoice", None), ("Expense Claim", None),
+    ("Payment Entry", None), ("Journal Entry", None), ("Account", None),
 ]
 
 
@@ -179,6 +180,69 @@ def run():
         ok.append("Customer detail: Total Sales / To Receive summary present")
     except Exception as e:
         fail.append(f"Customer money summary: {e}")
+
+    # ── every tile: open the FIRST record's detail sheet (per-doctype render) ──
+    for doctype, _ in TILES:
+        try:
+            l = get_list(doctype, page_length=1)
+            if not l["rows"]:
+                ok.append(f"{doctype}: list empty (nothing to open)")
+                continue
+            d = get_doc(doctype, l["rows"][0]["name"])
+            assert d.get("name") and isinstance(d.get("fields"), list)
+            ok.append(f"{doctype}: list + detail sheet render ({d['name']})")
+        except Exception as e:
+            fail.append(f"{doctype} detail: {frappe.get_traceback().splitlines()[-1]}")
+
+    # ── ensure ONE SUBMITTED doc of each transaction type (via app endpoints) ──
+    for doctype, party_field, party, values in [
+        ("Quotation",        "party_name", customer,
+         {"quotation_to": "Customer", "party_name": customer,
+          "transaction_date": nowdate(), "items": line}),
+        ("Sales Order",      "customer", customer,
+         {"customer": customer, "transaction_date": nowdate(),
+          "delivery_date": add_days(nowdate(), 7), "items": line}),
+        ("Sales Invoice",    "customer", customer,
+         {"customer": customer, "posting_date": nowdate(), "items": line}),
+        ("Purchase Invoice", "supplier", supplier,
+         {"supplier": supplier, "posting_date": nowdate(),
+          "bill_no": "MT-BILL-1", "bill_date": nowdate(), "items": line}),
+    ]:
+        try:
+            if frappe.db.exists(doctype, {party_field: party, "docstatus": 1}):
+                ok.append(f"{doctype}: submitted doc already exists")
+                continue
+            draft = frappe.db.exists(doctype, {party_field: party, "docstatus": 0})
+            name = draft or create_doc(doctype, values)["name"]
+            r = submit_doc(doctype, name)
+            assert r["docstatus"] == 1
+            ok.append(f"{doctype}: created + SUBMITTED {name} via app endpoints")
+        except Exception:
+            frappe.db.rollback()
+            fail.append(f"{doctype} submit: {frappe.get_traceback().splitlines()[-1]}")
+
+    # ── expense claim create (needs an Employee) ──
+    try:
+        emp = frappe.get_all("Employee", filters={"status": "Active"},
+                             limit_page_length=1, pluck="name")
+        if not emp:
+            ok.append("Expense Claim: skipped (no Employee on site)")
+        elif frappe.db.exists("Expense Claim", {"employee": emp[0]}):
+            ok.append("Expense Claim: record already exists")
+        else:
+            etype = frappe.get_all("Expense Claim Type", limit_page_length=1, pluck="name")
+            if not etype:
+                ok.append("Expense Claim: skipped (no Expense Claim Type)")
+            else:
+                r = create_doc("Expense Claim", {
+                    "employee": emp[0],
+                    "expenses": [{"expense_type": etype[0],
+                                  "expense_date": nowdate(), "amount": 75}],
+                })
+                ok.append(f"Expense Claim: created {r['name']}")
+    except Exception:
+        frappe.db.rollback()
+        fail.append(f"Expense Claim: {frappe.get_traceback().splitlines()[-1]}")
 
     # ── record a payment against a submitted invoice ──
     try:

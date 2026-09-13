@@ -34,9 +34,13 @@ export function csrf() {
   return session.csrf || window.frappe?.csrf_token || "";
 }
 
-/** Authenticated fetch — adds credentials + CSRF header */
-export function apiFetch(url, opts = {}) {
-  return fetch(url, {
+/** Authenticated fetch — adds credentials + CSRF header.
+ *  If the server rejects our CSRF token (a tab left open across a server
+ *  restart / re-login holds a stale one, and every POST then fails with
+ *  "Invalid Request"), reload the page ONCE to pick up a fresh token —
+ *  the user just taps the button again instead of being stuck forever. */
+export async function apiFetch(url, opts = {}) {
+  const r = await fetch(url, {
     credentials: "include",
     headers: {
       "Content-Type":        "application/json",
@@ -45,6 +49,21 @@ export function apiFetch(url, opts = {}) {
     },
     ...opts,
   });
+  if (r.status === 400 || r.status === 403) {
+    try {
+      const body = await r.clone().text();
+      if (body.includes("CSRFTokenError")) {
+        const key = "mt-csrf-reloaded";
+        if (!sessionStorage.getItem(key)) {
+          sessionStorage.setItem(key, "1");
+          window.location.reload();
+        } else {
+          sessionStorage.removeItem(key);   // allow a future retry
+        }
+      }
+    } catch { /* fall through to normal error handling */ }
+  }
+  return r;
 }
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
