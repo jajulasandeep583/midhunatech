@@ -7,6 +7,10 @@ import { reactive } from "vue";
 // window.__MT__ is populated server-side — zero latency on first load
 const boot = window.__MT__ || {};
 
+/** Build version this page is running — shown in the app so a stale copy
+ *  can be identified at a glance instead of guessed at. */
+export const buildVersion = boot.build_v || "";
+
 export const session = reactive({
   user:      boot.user     || null,
   fullname:  boot.fullname || "",

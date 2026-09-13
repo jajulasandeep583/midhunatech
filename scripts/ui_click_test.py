@@ -20,7 +20,10 @@ def check(label, ok, detail=""):
 
 with sync_playwright() as p:
     browser = p.chromium.launch(channel="chromium")
-    page = browser.new_page(viewport={"width": 400, "height": 850})
+    # A real phone: touch events, mobile viewport — synthetic mouse clicks
+    # hide bugs that a finger hits (e.g. a dialog rendered off-screen).
+    ctx = browser.new_context(**p.devices["Pixel 5"])
+    page = ctx.new_page()
 
     # ── login through the app's own screen ──
     page.goto(f"{BASE}/midhunatech", wait_until="domcontentloaded")
@@ -41,7 +44,7 @@ with sync_playwright() as p:
         loc = page.locator(".dl-item", has_text=has_text) if has_text else page.locator(".dl-item")
         if not loc.count():
             return False
-        loc.nth(index).click()
+        loc.nth(index).tap()
         page.wait_for_timeout(3000)
         return True
 
@@ -50,19 +53,32 @@ with sync_playwright() as p:
         return [b.nth(i).inner_text() for i in range(b.count())]
 
     def tap(label):
+        """Tap with a finger — and only if the button is really on screen."""
         b = page.locator(".dl-act", has_text=label)
         if not b.count():
             return False
-        b.first.click()
-        page.wait_for_timeout(1000)
+        b.first.tap()
+        page.wait_for_timeout(1200)
         return True
 
+    def dialog_visible():
+        """The confirm button must be visible AND inside the viewport — a
+        dialog trapped in a transformed container renders off-screen."""
+        y = page.locator(".dl-confirm-yes")
+        if not y.count() or not y.first.is_visible():
+            return False, "not visible"
+        box = y.first.bounding_box()
+        vp = page.viewport_size
+        if not box:
+            return False, "no box"
+        on = (0 <= box["y"] <= vp["height"] - 10) and (0 <= box["x"] <= vp["width"] - 10)
+        return on, f"at x={int(box['x'])},y={int(box['y'])} viewport {vp['width']}x{vp['height']}"
+
     def confirm_yes():
-        """Accept the confirmation dialog if one appeared."""
         y = page.locator(".dl-confirm-yes")
         if not y.count():
             return False
-        y.click()
+        y.tap()
         page.wait_for_timeout(6000)
         return True
 
@@ -78,7 +94,7 @@ with sync_playwright() as p:
 
     # ── 1. CREATE + SUBMIT a quotation with real taps ──
     open_list("quotation")
-    page.locator(".dl-fab").click()
+    page.locator(".dl-fab").tap()
     page.wait_for_timeout(3500)
     page.locator(".df-link input").first.fill("MT Test Customer")
     page.wait_for_timeout(1500)
@@ -98,7 +114,7 @@ with sync_playwright() as p:
     if qty.count():
         qty.first.fill("3")
     page.wait_for_timeout(400)
-    page.locator(".df-submit").click()       # ✓ Create & Submit
+    page.locator(".df-submit").tap()         # ✓ Create & Submit
     page.wait_for_timeout(8000)
     created_ok = page.locator(".dl-detail-title").count() > 0
     check("create + submit a quotation by tapping the form", created_ok,
@@ -107,8 +123,9 @@ with sync_playwright() as p:
     # ── 2. CANCEL it (dialog) ──
     if created_ok:
         tapped = tap("Cancel")
-        dialog = page.locator(".dl-confirm-yes").count() > 0
-        check("Cancel opens a confirmation dialog", tapped and dialog)
+        on_screen, where = dialog_visible()
+        check("Cancel dialog appears ON SCREEN after a finger tap",
+              tapped and on_screen, where)
         confirm_yes()
         check("Cancel completes", chip() == "Cancelled", f"status {chip()}")
 
@@ -121,8 +138,9 @@ with sync_playwright() as p:
 
         # ── 4. DELETE the amended draft (dialog) ──
         tapped = tap("Delete")
-        dialog = page.locator(".dl-confirm-yes").count() > 0
-        check("Delete opens a confirmation dialog", tapped and dialog)
+        on_screen, where = dialog_visible()
+        check("Delete dialog appears ON SCREEN after a finger tap",
+              tapped and on_screen, where)
         confirm_yes()
         check("Delete closes the sheet", page.locator(".dl-detail-title").count() == 0)
 

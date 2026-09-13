@@ -117,6 +117,14 @@
         </div>
       </template>
 
+      <!-- build stamp: tells us instantly whether this copy is current -->
+      <div class="mt-build">
+        Build {{ buildVersion }}
+        <button class="mt-build-btn" :disabled="refreshing" @click="doHardRefresh">
+          {{ refreshing ? "updating…" : "update now" }}
+        </button>
+      </div>
+
     </ion-content>
   </ion-page>
 </template>
@@ -128,7 +136,9 @@ import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonContent,
   IonRefresher, IonRefresherContent, IonSkeletonText, IonButton,
 } from "@ionic/vue";
-import { session, appConfig, loadConfig, hexAlpha, hardRefresh } from "@/data/session.js";
+import {
+  session, appConfig, loadConfig, hexAlpha, hardRefresh, buildVersion,
+} from "@/data/session.js";
 import { notify, loadFeed } from "@/data/notify.js";
 
 const router      = useRouter();
@@ -207,6 +217,15 @@ function iconChar(name) {
   border: none; background: #f1f5f9; border-radius: 50%;
   font-size: 17px; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
+}
+.mt-build {
+  text-align: center; font-size: 11px; color: #94a3b8;
+  padding: 18px 0 26px; font-variant-numeric: tabular-nums;
+}
+.mt-build-btn {
+  background: none; border: none; color: var(--ion-color-primary);
+  font-size: 11px; font-weight: 700; text-decoration: underline; cursor: pointer;
+  -webkit-appearance: none; padding: 2px 4px;
 }
 .mt-bell-badge {
   position: absolute; top: -3px; right: -4px;

@@ -192,19 +192,25 @@
           </div>
         </template>
 
-        <!-- ── confirmation dialog (cancel / delete) ── -->
-        <div v-if="confirm.open" class="dl-confirm-back" @click.self="confirm.open = false">
-          <div class="dl-confirm" role="dialog" aria-modal="true">
-            <div class="dl-confirm-title">{{ confirm.header }}</div>
-            <div class="dl-confirm-msg">{{ confirm.message }}</div>
-            <div class="dl-confirm-btns">
-              <button class="dl-confirm-no" @click="confirm.open = false">No, keep it</button>
-              <button class="dl-confirm-yes" @click="runConfirm">{{ confirm.yes }}</button>
-            </div>
-          </div>
-        </div>
       </ion-content>
     </ion-modal>
+
+    <!-- ── confirmation dialog (cancel / delete) ──
+         Teleported to <body>: inside the sheet it sits in a transformed,
+         scrolling container, which traps position:fixed and pushes the
+         dialog off-screen on phones. -->
+    <Teleport to="body">
+      <div v-if="confirm.open" class="dl-confirm-back" @click.self="confirm.open = false">
+        <div class="dl-confirm" role="dialog" aria-modal="true">
+          <div class="dl-confirm-title">{{ confirm.header }}</div>
+          <div class="dl-confirm-msg">{{ confirm.message }}</div>
+          <div class="dl-confirm-btns">
+            <button class="dl-confirm-no" @click="confirm.open = false">No, keep it</button>
+            <button class="dl-confirm-yes" @click="runConfirm">{{ confirm.yes }}</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
 
     <!-- ── Floating "+" create button ── -->
     <button v-if="view.can_create" class="dl-fab" :aria-label="`New ${view.label}`"
