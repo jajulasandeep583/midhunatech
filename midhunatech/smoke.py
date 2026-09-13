@@ -18,8 +18,10 @@ from midhunatech.api.data import (
 
 TILES = [
     ("Item", None), ("Customer", None), ("Supplier", None), ("Quotation", None),
-    ("Sales Order", None), ("Sales Invoice", None),
-    ("Purchase Invoice", None), ("Expense Claim", None),
+    ("Sales Order", None), ("Delivery Note", None), ("Sales Invoice", None),
+    ("Material Request", None), ("Purchase Order", None), ("Purchase Receipt", None),
+    ("Purchase Invoice", None), ("Stock Entry", None), ("Warehouse", None),
+    ("Expense Claim", None),
     ("Payment Entry", None), ("Journal Entry", None), ("Account", None),
 ]
 
@@ -235,6 +237,37 @@ def run():
         except Exception:
             frappe.db.rollback()
             fail.append(f"{doctype} submit: {frappe.get_traceback().splitlines()[-1]}")
+
+    # ── the newly added stock/purchase doctypes: create one of each ──
+    wh = frappe.get_all("Warehouse", filters={"is_group": 0}, limit_page_length=1,
+                        pluck="name")
+    wh = wh[0] if wh else None
+    stock_line = [{"item_code": item, "qty": 1, "rate": 100, "warehouse": wh}]
+    for doctype, values in [
+        ("Delivery Note",    {"customer": customer, "posting_date": nowdate(),
+                              "items": stock_line}),
+        ("Material Request", {"transaction_date": nowdate(),
+                              "schedule_date": add_days(nowdate(), 3),
+                              "material_request_type": "Purchase",
+                              "items": [{"item_code": item, "qty": 1,
+                                         "warehouse": wh,
+                                         "schedule_date": add_days(nowdate(), 3)}]}),
+        ("Purchase Order",   {"supplier": supplier, "transaction_date": nowdate(),
+                              "schedule_date": add_days(nowdate(), 5),
+                              "items": [{"item_code": item, "qty": 1, "rate": 100,
+                                         "schedule_date": add_days(nowdate(), 5)}]}),
+        ("Purchase Receipt", {"supplier": supplier, "posting_date": nowdate(),
+                              "items": stock_line}),
+    ]:
+        try:
+            if frappe.db.exists(doctype, {"docstatus": ("<", 2)}):
+                ok.append(f"{doctype}: record already exists")
+                continue
+            r = create_doc(doctype, values)
+            ok.append(f"{doctype}: created {r['name']} from the app")
+        except Exception:
+            frappe.db.rollback()
+            fail.append(f"{doctype} create: {frappe.get_traceback().splitlines()[-1]}")
 
     # ── expense claim create (needs an Employee) ──
     try:

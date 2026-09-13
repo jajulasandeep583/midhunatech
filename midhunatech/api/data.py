@@ -148,6 +148,11 @@ _DEFAULT_FIELDS = {
     "Supplier":         ["supplier_group", "country", "mobile_no", "supplier_type"],
     "Expense Claim":    ["employee_name", "posting_date", "total_claimed_amount", "total_sanctioned_amount", "status"],
     "Account":          ["account_type", "root_type"],
+    "Delivery Note":    ["customer", "posting_date", "grand_total", "status"],
+    "Purchase Order":   ["supplier", "transaction_date", "schedule_date", "grand_total", "status"],
+    "Purchase Receipt": ["supplier", "posting_date", "grand_total", "status"],
+    "Stock Entry":      ["stock_entry_type", "posting_date", "total_outgoing_value"],
+    "Warehouse":        ["warehouse_type", "company", "is_group"],
 }
 
 
@@ -450,6 +455,22 @@ _CHILD_CREATE = {
         "table": "expenses",
         "fields": ["expense_type", "expense_date", "amount", "description"],
         "reqd": {"expense_type", "expense_date", "amount"},
+    },
+    # ── stock movement documents ──
+    "Delivery Note": {
+        "table": "items",
+        "fields": ["item_code", "qty", "rate", "warehouse"],
+        "reqd": {"item_code", "qty"},
+    },
+    "Purchase Receipt": {
+        "table": "items",
+        "fields": ["item_code", "qty", "rate", "warehouse"],
+        "reqd": {"item_code", "qty", "warehouse"},
+    },
+    "Stock Entry": {
+        "table": "items",
+        "fields": ["item_code", "qty", "s_warehouse", "t_warehouse"],
+        "reqd": {"item_code", "qty"},
     },
     # Accounting postings from the phone: bank charges, office expenses, any
     # debit/credit pair. Debit the expense account, credit the bank account.
@@ -1289,6 +1310,11 @@ def _apply_taxes_template(doc):
     if doc.doctype not in _TAXABLE_DOCTYPES or doc.get("taxes"):
         return
     if not doc.meta.has_field("taxes_and_charges") or not doc.get("company"):
+        return
+    # Purchases from an unregistered supplier carry no input GST — applying
+    # a GST template there is rejected ("supplier without GSTIN").
+    if doc.get("supplier") and frappe.get_meta("Supplier").has_field("gstin") \
+            and not frappe.db.get_value("Supplier", doc.supplier, "gstin"):
         return
     master = _taxes_master(doc.doctype)
     tname = None

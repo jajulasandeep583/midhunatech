@@ -101,13 +101,10 @@ with sync_playwright() as p:
         check("Sales Invoice: payment recorded by tapping",
               chip() in ("Partly Paid", "Paid"), f"status {chip()}")
 
-        # cancel — native dialog must appear and the doc must end Cancelled
-        before = len(dialogs)
+        # cancel — one tap, no confirmation step
         tapped = tap("Cancel", 8000)
-        check("Sales Invoice: Cancel asks for confirmation",
-              tapped and len(dialogs) > before,
-              dialogs[-1] if dialogs else "no dialog appeared")
-        check("Sales Invoice: cancelled", chip() == "Cancelled", f"status {chip()}")
+        check("Sales Invoice: cancelled with one tap",
+              tapped and chip() == "Cancelled", f"status {chip()}")
 
         # amend -> editable draft
         tapped = tap("Amend", 8000)
@@ -115,18 +112,16 @@ with sync_playwright() as p:
         check("Sales Invoice: amended into an editable draft",
               tapped and "✓ Submit" in " ".join(after), ", ".join(after))
 
-        # delete the amended draft
-        before = len(dialogs)
+        # delete the amended draft — one tap
         tapped = tap("Delete", 8000)
-        check("Sales Invoice: Delete asks for confirmation",
-              tapped and len(dialogs) > before,
-              dialogs[-1] if len(dialogs) > before else "no dialog appeared")
-        check("Sales Invoice: draft deleted (sheet closed)",
-              page.locator(".dl-detail-title").count() == 0)
+        check("Sales Invoice: draft deleted with one tap",
+              tapped and page.locator(".dl-detail-title").count() == 0)
 
     # ══ every other tile: buttons present for its first record ══
     for slug in ("items", "customers", "suppliers", "quotation", "sales_order",
-                 "purchase_invoice", "payments", "journal_entry", "accounts"):
+                 "delivery_note", "material_request", "purchase_order",
+                 "purchase_receipt", "purchase_invoice", "stock_entry",
+                 "warehouses", "payments", "journal_entry", "accounts"):
         open_list(slug)
         cards = page.locator(".dl-item")
         if cards.count():

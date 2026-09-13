@@ -355,21 +355,9 @@ async function doSubmit() {
   }
 }
 
-// Destructive actions confirm with the BROWSER's own dialog. A custom
-// in-page dialog kept rendering off-screen inside the sheet on phones; the
-// native one is drawn by the OS and cannot be clipped or mispositioned.
-function askConfirm(message) {
-  try {
-    return window.confirm(message);
-  } catch {
-    return true;   // no dialog available — don't block the action
-  }
-}
-
+// One tap does the action — no confirmation step. (Cancel is reversible
+// by amending; Delete only ever applies to drafts and cancelled docs.)
 function doCancel() {
-  if (!askConfirm(`Cancel ${detail.value.name}?\n\n`
-      + "Its accounting entries will be reversed. You can amend it "
-      + "afterwards to make a corrected copy.")) return;
   runCancel();
 }
 
@@ -390,8 +378,6 @@ async function runCancel() {
 }
 
 function doDelete() {
-  if (!askConfirm(`Delete ${detail.value.name}?\n\n`
-      + "This cannot be undone.")) return;
   runDelete();
 }
 

@@ -8,17 +8,28 @@ import frappe
 # Only seeded if the target Doctype exists on the site (skips HRMS/ERPNext
 # doctypes that aren't installed).
 NATIVE_MODULES = [
-    ("Items",            "items",            "box",       "#f59e0b", "/items",            "Item"),
-    ("Customers",        "customers",        "users",     "#0ea5e9", "/customers",        "Customer"),
-    ("Suppliers",        "suppliers",        "🏭",        "#f97316", "/suppliers",        "Supplier"),
-    ("Quotation",        "quotation",        "file",      "#6366f1", "/quotation",        "Quotation"),
-    ("Sales Order",      "sales_order",      "clipboard", "#22c55e", "/sales_order",      "Sales Order"),
-    ("Sales Invoice",    "sales_invoice",    "dollar",    "#10b981", "/sales_invoice",    "Sales Invoice"),
-    ("Purchase Invoice", "purchase_invoice", "🧾",        "#8b5cf6", "/purchase_invoice", "Purchase Invoice"),
-    ("Expense Claim",    "expense_claim",    "💸",        "#ec4899", "/expense_claim",    "Expense Claim"),
-    ("Payments",         "payments",         "💳",        "#14b8a6", "/payments",         "Payment Entry"),
-    ("Journal Entry",    "journal_entry",    "✍️",        "#64748b", "/journal_entry",    "Journal Entry"),
-    ("Accounts",         "accounts",         "🏦",        "#0f766e", "/accounts",         "Account"),
+    # ── masters ──
+    ("Items",             "items",             "box",       "#f59e0b", "/items",             "Item"),
+    ("Customers",         "customers",         "users",     "#0ea5e9", "/customers",         "Customer"),
+    ("Suppliers",         "suppliers",         "🏭",        "#f97316", "/suppliers",         "Supplier"),
+    # ── sales cycle ──
+    ("Quotation",         "quotation",         "file",      "#6366f1", "/quotation",         "Quotation"),
+    ("Sales Order",       "sales_order",       "clipboard", "#22c55e", "/sales_order",       "Sales Order"),
+    ("Delivery Note",     "delivery_note",     "🚚",        "#06b6d4", "/delivery_note",     "Delivery Note"),
+    ("Sales Invoice",     "sales_invoice",     "dollar",    "#10b981", "/sales_invoice",     "Sales Invoice"),
+    # ── purchase cycle ──
+    ("Material Request",  "material_request",  "📝",        "#a855f7", "/material_request",  "Material Request"),
+    ("Purchase Order",    "purchase_order",    "📦",        "#7c3aed", "/purchase_order",    "Purchase Order"),
+    ("Purchase Receipt",  "purchase_receipt",  "📥",        "#9333ea", "/purchase_receipt",  "Purchase Receipt"),
+    ("Purchase Invoice",  "purchase_invoice",  "🧾",        "#8b5cf6", "/purchase_invoice",  "Purchase Invoice"),
+    # ── stock ──
+    ("Stock Entry",       "stock_entry",       "🔄",        "#eab308", "/stock_entry",       "Stock Entry"),
+    ("Warehouses",        "warehouses",        "🏬",        "#d97706", "/warehouses",        "Warehouse"),
+    # ── money ──
+    ("Payments",          "payments",          "💳",        "#14b8a6", "/payments",          "Payment Entry"),
+    ("Journal Entry",     "journal_entry",     "✍️",        "#64748b", "/journal_entry",     "Journal Entry"),
+    ("Expense Claim",     "expense_claim",     "💸",        "#ec4899", "/expense_claim",     "Expense Claim"),
+    ("Accounts",          "accounts",          "🏦",        "#0f766e", "/accounts",          "Account"),
 ]
 
 # Report tiles seeded on install — only if the Report exists (i.e. ERPNext
