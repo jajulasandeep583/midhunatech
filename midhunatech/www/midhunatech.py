@@ -47,3 +47,28 @@ def get_context(context):
     context.session_fname = frappe.utils.get_fullname(frappe.session.user)
     context.site_name     = frappe.local.site
     context.build_v       = _build_version()
+
+    _log_boot(context.build_v)
+
+
+def _log_boot(build_v):
+    """Record every app launch (build, browser, host) to
+    logs/pwa-boot.log. Without this there is no way to tell which build a
+    user's device is actually running — the single hardest thing to
+    diagnose remotely."""
+    try:
+        import datetime
+
+        req = frappe.local.request
+        line = " | ".join([
+            datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            f"build={build_v}",
+            f"user={frappe.session.user}",
+            f"host={req.headers.get('Host', '?')}",
+            f"ua={(req.headers.get('User-Agent') or '?')[:110]}",
+        ])
+        path = frappe.get_site_path("..", "..", "logs", "pwa-boot.log")
+        with open(path, "a") as f:
+            f.write(line + "\n")
+    except Exception:
+        pass   # logging must never break the page
