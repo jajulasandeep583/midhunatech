@@ -102,6 +102,8 @@
                       @click="doSubmit">{{ acting === "submit" ? "Submitting…" : "✓ Submit" }}</button>
               <button v-if="detail.can_einvoice" class="dl-act" :disabled="acting"
                       @click="doEinvoice">{{ acting === "einv" ? "Generating…" : "🧾 e-Invoice" }}</button>
+              <button v-if="detail.can_pay" class="dl-act" :class="{ on: payOpen }"
+                      @click="togglePay">💰 Payment</button>
               <button v-if="view.can_print" class="dl-act" @click="openPrint">🖨️ Print</button>
               <button v-if="view.can_print" class="dl-act" @click="openPdf">📄 PDF</button>
               <button v-if="view.can_email" class="dl-act" :class="{ on: emailOpen }"
@@ -111,6 +113,24 @@
 
           <div v-if="actNote" class="dl-email-note" :class="{ err: actErr }"
                style="margin-bottom:10px;" role="alert">{{ actNote }}</div>
+
+          <!-- inline record-payment form -->
+          <div v-if="payOpen" class="dl-email">
+            <label class="dl-mini-lbl">Amount</label>
+            <input v-model="payAmount" type="number" class="dl-email-input" />
+            <label class="dl-mini-lbl">Date</label>
+            <input v-model="payDate" type="date" class="dl-email-input" />
+            <label class="dl-mini-lbl">Mode / account</label>
+            <select v-model="payMode" class="dl-email-input">
+              <option value="">— default —</option>
+              <option v-for="m in payModes" :key="m" :value="m">{{ m }}</option>
+            </select>
+            <input v-model="payRef" type="text" class="dl-email-input"
+                   placeholder="Reference no. (cheque / UTR — optional)" />
+            <button class="dl-email-send" :disabled="!payAmount || acting" @click="doPay">
+              {{ acting === "pay" ? "Recording…" : "Record Payment" }}
+            </button>
+          </div>
 
           <!-- inline email (PDF attached) -->
           <div v-if="emailOpen" class="dl-email">
@@ -184,7 +204,8 @@ import {
   IonButtons, IonContent, IonSpinner, IonToast,
 } from "@ionic/vue";
 import {
-  getView, getList, getDoc, emailDoc, submitDoc, generateEinvoice, badgeClass,
+  getView, getList, getDoc, emailDoc, submitDoc, generateEinvoice,
+  getPaymentMeta, recordPayment, badgeClass,
 } from "@/data/docdata.js";
 
 const NUM_COL_TYPES = new Set(["Currency", "Float", "Int", "Percent"]);
@@ -271,6 +292,7 @@ async function open(row) {
   detailLoading.value = true;
   emailOpen.value = false; emailNote.value = ""; emailErr.value = false;
   actNote.value = ""; actErr.value = false;
+  payOpen.value = false; payModes.value = []; payMode.value = ""; payRef.value = "";
   detail.value = { title: row.title, status: row.badge, fields: [] };
   try {
     detail.value = await getDoc(props.doctype, row.name, props.fields);
@@ -318,6 +340,46 @@ async function doEinvoice() {
   }
 }
 
+// ── record payment ──
+const payOpen = ref(false);
+const payAmount = ref("");
+const payDate = ref("");
+const payMode = ref("");
+const payRef = ref("");
+const payModes = ref([]);
+
+async function togglePay() {
+  payOpen.value = !payOpen.value;
+  if (payOpen.value && !payModes.value.length) {
+    try {
+      const m = await getPaymentMeta(props.doctype, detail.value.name);
+      payAmount.value = m.outstanding || "";
+      payDate.value = m.today || "";
+      payModes.value = m.modes || [];
+    } catch { /* form still usable with manual values */ }
+  }
+}
+
+async function doPay() {
+  acting.value = "pay";
+  actNote.value = ""; actErr.value = false;
+  try {
+    const r = await recordPayment(props.doctype, detail.value.name, {
+      amount: payAmount.value, posting_date: payDate.value,
+      mode_of_payment: payMode.value, reference_no: payRef.value,
+    });
+    payOpen.value = false;
+    toast.value = `Payment ${r.name} recorded`;
+    detail.value = await getDoc(props.doctype, detail.value.name, props.fields);
+    softRefresh();
+  } catch (e) {
+    actErr.value = true;
+    actNote.value = e.message || "Could not record payment.";
+  } finally {
+    acting.value = "";
+  }
+}
+
 // ── print / pdf / email actions ──
 const emailOpen = ref(false);
 const emailTo = ref("");
@@ -329,11 +391,17 @@ const emailErr = ref(false);
 function docUrlParams() {
   return `doctype=${encodeURIComponent(props.doctype)}&name=${encodeURIComponent(detail.value?.name || "")}`;
 }
+function openUrl(url) {
+  // window.open is silently blocked in some embedded/in-app browsers —
+  // fall back to navigating this tab (Back returns to the app).
+  const w = window.open(url, "_blank");
+  if (!w) window.location.href = url;
+}
 function openPrint() {
-  window.open(`/printview?${docUrlParams()}&trigger_print=1`, "_blank");
+  openUrl(`/printview?${docUrlParams()}&trigger_print=1`);
 }
 function openPdf() {
-  window.open(`/api/method/frappe.utils.print_format.download_pdf?${docUrlParams()}`, "_blank");
+  openUrl(`/api/method/frappe.utils.print_format.download_pdf?${docUrlParams()}`);
 }
 async function doEmail() {
   emailSending.value = true;
@@ -502,6 +570,8 @@ onUnmounted(() => document.removeEventListener("visibilitychange", onVisibility)
 .dl-email-send:disabled { opacity: .5; }
 .dl-email-note { margin-top: 8px; font-size: 12.5px; color: #15803d; text-align: center; }
 .dl-email-note.err { color: #dc2626; }
+.dl-mini-lbl { display: block; font-size: 11.5px; font-weight: 700; color: #64748b;
+  margin: 2px 2px 4px; }
 
 .dl-fieldgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
 .dl-field { padding: 10px 0; border-bottom: 1px solid #f1f5f9; min-width: 0; }

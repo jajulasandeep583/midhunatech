@@ -16,6 +16,9 @@ NATIVE_MODULES = [
     ("Sales Invoice",    "sales_invoice",    "dollar",    "#10b981", "/sales_invoice",    "Sales Invoice"),
     ("Purchase Invoice", "purchase_invoice", "🧾",        "#8b5cf6", "/purchase_invoice", "Purchase Invoice"),
     ("Expense Claim",    "expense_claim",    "💸",        "#ec4899", "/expense_claim",    "Expense Claim"),
+    ("Payments",         "payments",         "💳",        "#14b8a6", "/payments",         "Payment Entry"),
+    ("Journal Entry",    "journal_entry",    "✍️",        "#64748b", "/journal_entry",    "Journal Entry"),
+    ("Accounts",         "accounts",         "🏦",        "#0f766e", "/accounts",         "Account"),
 ]
 
 # Report tiles seeded on install — only if the Report exists (i.e. ERPNext

@@ -147,6 +147,7 @@ _DEFAULT_FIELDS = {
     "Customer":         ["customer_group", "territory", "mobile_no", "customer_type"],
     "Supplier":         ["supplier_group", "country", "mobile_no", "supplier_type"],
     "Expense Claim":    ["employee_name", "posting_date", "total_claimed_amount", "total_sanctioned_amount", "status"],
+    "Account":          ["account_type", "root_type"],
 }
 
 
@@ -426,6 +427,13 @@ _CHILD_CREATE = {
         "fields": ["expense_type", "expense_date", "amount", "description"],
         "reqd": {"expense_type", "expense_date", "amount"},
     },
+    # Accounting postings from the phone: bank charges, office expenses, any
+    # debit/credit pair. Debit the expense account, credit the bank account.
+    "Journal Entry": {
+        "table": "accounts",
+        "fields": ["account", "debit_in_account_currency", "credit_in_account_currency"],
+        "reqd": {"account"},
+    },
 }
 
 
@@ -555,6 +563,8 @@ def get_list(doctype, search=None, start=0, page_length=20, fields=None, filters
         _add_item_stock(out)
     elif doctype in ("Customer", "Supplier"):
         _add_party_money(doctype, out)
+    elif doctype == "Account":
+        _add_account_balance(out)
 
     return {"rows": out, "has_more": len(rows) == page_length}
 
@@ -603,6 +613,47 @@ def _add_party_money(doctype, rows):
         if due:
             fields.append({"label": due_lbl, "value": fmt_money(due, currency=cur)})
         r["fields"] = fields + r["fields"]
+
+
+def _party_primary_address(doctype, name):
+    """One-line display address for a Customer / Supplier (primary first)."""
+    links = frappe.get_all("Dynamic Link", filters={
+        "link_doctype": doctype, "link_name": name, "parenttype": "Address",
+    }, pluck="parent")
+    if not links:
+        return None
+    rows = frappe.get_all("Address", filters={"name": ("in", links)},
+                          fields=["address_line1", "address_line2", "city",
+                                  "state", "pincode"],
+                          order_by="is_primary_address desc, creation asc",
+                          limit_page_length=1)
+    if not rows:
+        return None
+    a = rows[0]
+    parts = [a.address_line1, a.address_line2, a.city, a.state,
+             (a.pincode and f"PIN {a.pincode}")]
+    return ", ".join(p for p in parts if p)
+
+
+def _add_account_balance(rows):
+    """Chart-of-accounts list: show each ledger account's live balance."""
+    try:
+        from erpnext.accounts.utils import get_balance_on
+    except ImportError:
+        return
+    groups = set(frappe.get_all("Account", filters={
+        "name": ("in", [r["name"] for r in rows]), "is_group": 1}, pluck="name"))
+    cur = _company_currency()
+    for r in rows:
+        if r["name"] in groups:
+            r["fields"].insert(0, {"label": _("Type"), "value": _("Group")})
+            continue
+        try:
+            bal = get_balance_on(r["name"])
+            r["fields"].insert(0, {"label": _("Balance"),
+                                   "value": fmt_money(bal or 0, currency=cur)})
+        except Exception:
+            continue
 
 
 def _add_item_stock(rows):
@@ -682,11 +733,13 @@ def get_doc(doctype, name, fields=None):
         "can_submit": int(bool(meta.is_submittable and doc.docstatus == 0
                                and frappe.has_permission(doctype, "submit", doc=doc))),
         "can_einvoice": _einvoice_available(doc),
+        "can_pay": _can_pay(doc),
         "fields": out_fields,
         "tables": _detail_tables(meta, doc, table_spec, doctype),
     }
 
-    # Customer / Supplier detail: total business + amount still due, up top
+    # Customer / Supplier detail: total business + amount still due, up top,
+    # plus the party's address and their recent invoices
     if doctype in ("Customer", "Supplier"):
         from frappe.utils import flt
         m = _party_money(doctype, [doc.name]).get(doc.name)
@@ -698,6 +751,34 @@ def get_doc(doctype, name, fields=None):
         result["fields"].insert(0, {
             "label": _("Total Sales") if doctype == "Customer" else _("Total Purchases"),
             "value": fmt_money(total, currency=cur), "fieldtype": "Currency"})
+
+        addr = _party_primary_address(doctype, doc.name)
+        if addr:
+            result["fields"].append({"label": _("Address"), "value": addr,
+                                     "fieldtype": "Small Text"})
+
+        inv, pf = (("Sales Invoice", "customer") if doctype == "Customer"
+                   else ("Purchase Invoice", "supplier"))
+        recent = frappe.get_all(inv, filters={pf: doc.name, "docstatus": ("<", 2)},
+                                fields=["name", "posting_date", "grand_total",
+                                        "outstanding_amount", "status"],
+                                order_by="posting_date desc, creation desc",
+                                limit_page_length=8)
+        if recent:
+            result["tables"].insert(0, {
+                "fieldname": "_invoices",
+                "label":     _("Recent Invoices"),
+                "count":     len(recent),
+                "columns":   [{"label": _("Invoice"), "fieldtype": "Data"},
+                              {"label": _("Date"), "fieldtype": "Data"},
+                              {"label": _("Amount"), "fieldtype": "Currency"},
+                              {"label": _("Outstanding"), "fieldtype": "Currency"},
+                              {"label": _("Status"), "fieldtype": "Data"}],
+                "rows":      [[r.name, format_date(r.posting_date),
+                               fmt_money(r.grand_total, currency=cur),
+                               fmt_money(r.outstanding_amount, currency=cur),
+                               r.status or ""] for r in recent],
+            })
 
     # Item detail: available stock up top + warehouse-wise breakup table
     if doctype == "Item" and doc.get("is_stock_item"):
@@ -746,7 +827,14 @@ _CREATE_AUTO = {
 }
 
 
-def _create_fields(meta, perm, cap=12):
+# Optional fields forced ONTO the create form for specific doctypes (they are
+# neither mandatory nor in_list_view, so the generic picker would skip them).
+_CREATE_EXTRA = {
+    "Purchase Invoice": ["bill_no", "bill_date"],   # supplier invoice no / date
+}
+
+
+def _create_fields(meta, perm, cap=12, doctype=None):
     """Mandatory-first creatable field list for a (parent or child) meta."""
     fields, seen = [], set()
 
@@ -797,6 +885,10 @@ def _create_fields(meta, perm, cap=12):
             ctrl = meta.get_field(df.options or "")
             if ctrl is not None and ctrl.reqd:
                 add(df)
+    for fn in _CREATE_EXTRA.get(doctype or "", []):   # curated extras next
+        df = meta.get_field(fn)
+        if df is not None:
+            add(df)
     for df in meta.fields:          # then a few common optional ones
         if len(fields) >= cap:
             break
@@ -885,7 +977,7 @@ def get_create_meta(doctype):
                      "fields": cfields}
             break
 
-    fields = _create_fields(meta, perm)
+    fields = _create_fields(meta, perm, doctype=doctype)
     if spec:
         for f in fields:
             if f["fieldname"] in spec.get("parent_reqd", ()):
@@ -1054,6 +1146,75 @@ def _einvoice_available(doc):
         return 0
     except Exception:
         return 0
+
+
+def _can_pay(doc):
+    """1 when the Record-Payment button should show: a submitted Sales /
+    Purchase Invoice with outstanding amount, user allowed to make payments."""
+    from frappe.utils import flt
+    if doc.doctype not in ("Sales Invoice", "Purchase Invoice") or doc.docstatus != 1:
+        return 0
+    if flt(doc.get("outstanding_amount")) <= 0:
+        return 0
+    return int(bool(frappe.has_permission("Payment Entry", "create")))
+
+
+@frappe.whitelist()
+def get_payment_meta(doctype, name):
+    """What the mobile Record-Payment form needs: outstanding, today, and the
+    Modes of Payment configured for the company."""
+    doc = frappe.get_doc(doctype, name)
+    doc.check_permission("read")
+    modes = frappe.get_all("Mode of Payment", filters={"enabled": 1}, pluck="name")
+    return {
+        "outstanding": doc.get("outstanding_amount"),
+        "today":       nowdate(),
+        "modes":       modes,
+    }
+
+
+@frappe.whitelist()
+def record_payment(doctype, name, amount=None, posting_date=None,
+                   mode_of_payment=None, reference_no=None):
+    """Create AND submit a Payment Entry against a submitted invoice — the
+    one-tap 'customer paid us' / 'we paid the supplier' flow."""
+    from frappe.utils import flt
+    if doctype not in ("Sales Invoice", "Purchase Invoice"):
+        frappe.throw(_("Payments can only be recorded against invoices"))
+    frappe.has_permission("Payment Entry", "create", throw=True)
+
+    from erpnext.accounts.doctype.payment_entry.payment_entry import get_payment_entry
+    pe = get_payment_entry(doctype, name)
+    if posting_date:
+        pe.posting_date = posting_date
+    if amount:
+        amount = flt(amount)
+        pe.paid_amount = amount
+        pe.received_amount = amount
+        for ref in pe.references:
+            ref.allocated_amount = amount
+    if mode_of_payment:
+        pe.mode_of_payment = mode_of_payment
+        try:
+            from erpnext.accounts.doctype.payment_entry.payment_entry import (
+                get_bank_cash_account,
+            )
+            acc = get_bank_cash_account(pe.mode_of_payment, pe.company)
+            if acc and acc.get("account"):
+                if pe.payment_type == "Receive":
+                    pe.paid_to = acc["account"]
+                else:
+                    pe.paid_from = acc["account"]
+        except Exception:
+            pass  # keep the default account from get_payment_entry
+    # Bank transactions need a reference — default to the invoice number so
+    # one-tap payment works; a typed UTR / cheque no. wins.
+    pe.reference_no = reference_no or pe.reference_no or name
+    pe.reference_date = posting_date or nowdate()
+    pe.insert()
+    pe.submit()
+    frappe.db.commit()
+    return {"name": pe.name}
 
 
 @frappe.whitelist()

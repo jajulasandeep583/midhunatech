@@ -73,6 +73,12 @@ export const submitDoc = (doctype, name) =>
 export const generateEinvoice = (name) =>
   callPost("midhunatech.api.data.generate_einvoice", { name });
 
+export const getPaymentMeta = (doctype, name) =>
+  call("midhunatech.api.data.get_payment_meta", { doctype, name });
+
+export const recordPayment = (doctype, name, values) =>
+  callPost("midhunatech.api.data.record_payment", { doctype, name, ...values });
+
 // Map a status string to a soft badge palette (works for any doctype)
 export function badgeClass(status) {
   const s = (status || "").toLowerCase();

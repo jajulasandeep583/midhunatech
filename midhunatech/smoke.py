@@ -180,6 +180,80 @@ def run():
     except Exception as e:
         fail.append(f"Customer money summary: {e}")
 
+    # ── record a payment against a submitted invoice ──
+    try:
+        from midhunatech.api.data import record_payment
+        si = frappe.get_all("Sales Invoice",
+                            filters={"customer": customer, "docstatus": 1,
+                                     "outstanding_amount": (">", 0)},
+                            limit_page_length=1, pluck="name")
+        if si:
+            d = get_doc("Sales Invoice", si[0])
+            assert d.get("can_pay") == 1, f"can_pay={d.get('can_pay')}"
+            r = record_payment("Sales Invoice", si[0], amount=50)
+            ok.append(f"recorded payment {r['name']} against {si[0]}")
+        else:
+            pe = frappe.db.exists("Payment Entry", {"party": customer, "docstatus": 1})
+            assert pe, "no open invoice and no prior payment"
+            ok.append(f"payment path verified earlier ({pe})")
+    except Exception as e:
+        frappe.db.rollback()
+        fail.append(f"record_payment: {frappe.get_traceback().splitlines()[-1]}")
+
+    # ── journal entry (expense posting) from the app ──
+    try:
+        je_exists = frappe.db.exists("Journal Entry",
+                                     {"user_remark": "MT smoke expense", "docstatus": 0})
+        if not je_exists:
+            expense = frappe.get_all("Account", filters={"root_type": "Expense",
+                                     "is_group": 0}, limit_page_length=1, pluck="name")[0]
+            cash = frappe.get_all("Account", filters={"account_type": "Cash",
+                                  "is_group": 0}, limit_page_length=1, pluck="name")[0]
+            r = create_doc("Journal Entry", {
+                "posting_date": nowdate(), "user_remark": "MT smoke expense",
+                "accounts": [
+                    {"account": expense, "debit_in_account_currency": 25},
+                    {"account": cash, "credit_in_account_currency": 25},
+                ],
+            })
+            ok.append(f"created Journal Entry {r['name']} (expense posting)")
+        else:
+            ok.append(f"Journal Entry draft already exists ({je_exists})")
+    except Exception as e:
+        frappe.db.rollback()
+        fail.append(f"Journal Entry: {frappe.get_traceback().splitlines()[-1]}")
+
+    # ── chart of accounts list shows balances ──
+    try:
+        l = get_list("Account", page_length=10)
+        with_bal = [r for r in l["rows"] if r["fields"] and
+                    r["fields"][0]["label"] in ("Balance", "Type")]
+        assert with_bal, l["rows"][:2]
+        ok.append(f"Account list: {len(with_bal)}/{len(l['rows'])} rows show Balance/Type")
+    except Exception as e:
+        fail.append(f"Account balances: {e}")
+
+    # ── purchase invoice form has supplier invoice no / date ──
+    try:
+        pim = get_create_meta("Purchase Invoice")
+        names = {f["fieldname"] for f in pim["fields"]}
+        assert {"bill_no", "bill_date"} <= names, names
+        ok.append("Purchase Invoice form: bill_no + bill_date present")
+    except Exception as e:
+        fail.append(f"PI bill fields: {e}")
+
+    # ── customer detail: address + recent invoices ──
+    try:
+        d = get_doc("Customer", gst_cust)
+        labels = [f["label"] for f in d["fields"]]
+        assert "Address" in labels, labels
+        d2 = get_doc("Customer", customer)
+        assert any(t["fieldname"] == "_invoices" for t in d2["tables"]), \
+            [t["fieldname"] for t in d2["tables"]]
+        ok.append("Party detail: Address shown; Recent Invoices table present")
+    except Exception as e:
+        fail.append(f"party detail extras: {e}")
+
     print("\n".join("  [OK]   " + s for s in ok))
     if fail:
         print("\n".join("  [FAIL] " + s for s in fail))
