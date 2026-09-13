@@ -35,7 +35,19 @@ router.isReady().then(() => app.mount("#app"));
 // Network-first (see the SW), so it never serves a stale shell. Failure is
 // non-fatal: the app works fine, the install banner just won't show.
 if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
+  window.addEventListener("load", async () => {
+    // Kill any legacy worker (old precache/vite-pwa builds) that isn't the
+    // canonical app SW or the push SW — those served stale shells forever.
+    try {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      for (const reg of regs) {
+        const url = reg.active?.scriptURL || reg.waiting?.scriptURL
+          || reg.installing?.scriptURL || "";
+        if (url && !url.endsWith("/midhunatech-sw.js") && !url.includes("push-sw.js")) {
+          await reg.unregister().catch(() => {});
+        }
+      }
+    } catch { /* non-fatal */ }
     navigator.serviceWorker
       .register("/midhunatech-sw.js", { scope: "/midhunatech" })
       .catch((err) => console.warn("[pwa] app SW registration failed", err));

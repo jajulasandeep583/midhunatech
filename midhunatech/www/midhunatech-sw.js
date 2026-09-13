@@ -8,11 +8,15 @@
  * it can legally claim scope "/midhunatech".
  *
  * Strategy: NETWORK-FIRST for navigations + same-origin GETs, so online users
- * ALWAYS get the freshest shell/bundle (this is deliberately the opposite of the
- * old precache/vite-pwa SW that served stale shells). /api is never touched by
- * the SW. Cache is only an offline fallback. No stale-shell risk.
+ * ALWAYS get the freshest shell/bundle. /api is never touched by the SW.
+ * Cache is only an offline fallback. No stale-shell risk.
+ *
+ * v2: on activate, wipe EVERY Cache Storage entry on the origin (including
+ * caches left behind by older precache/vite-pwa workers that served stale
+ * shells) and force-reload every open client — so a browser stuck on an old
+ * cached copy of the app heals itself on its next visit.
  */
-var SW_VERSION = "mt-app-v1";
+var SW_VERSION = "mt-app-v2";
 var SHELL_CACHE = "midhunatech-shell-" + SW_VERSION;
 var OFFLINE_URL = "/midhunatech";
 
@@ -28,9 +32,18 @@ self.addEventListener("activate", function (e) {
   e.waitUntil(
     caches.keys().then(function (keys) {
       return Promise.all(keys.map(function (k) {
-        if (k.indexOf("midhunatech-shell-") === 0 && k !== SHELL_CACHE) return caches.delete(k);
+        if (k !== SHELL_CACHE) return caches.delete(k);   // nuke ALL stale caches
       }));
-    }).then(function () { return self.clients.claim(); })
+    }).then(function () {
+      return self.clients.claim();
+    }).then(function () {
+      // Reload every open page so no tab keeps running a stale bundle.
+      return self.clients.matchAll({ type: "window" }).then(function (clients) {
+        return Promise.all(clients.map(function (c) {
+          return c.navigate(c.url).catch(function () {});
+        }));
+      });
+    })
   );
 });
 
