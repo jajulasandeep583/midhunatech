@@ -114,13 +114,13 @@
                       @click="emailOpen = !emailOpen">✉️ Email</button>
               <button v-if="detail.can_cancel" class="dl-act danger" :disabled="!!acting"
                       @click="doCancel">
-                {{ acting === "cancel" ? "Cancelling…" : (confirmCancel ? "Tap again to confirm" : "✕ Cancel") }}
+                {{ acting === "cancel" ? "Cancelling…" : "✕ Cancel" }}
               </button>
               <button v-if="detail.can_amend" class="dl-act primary" :disabled="!!acting"
                       @click="doAmend">{{ acting === "amend" ? "Amending…" : "✎ Amend" }}</button>
               <button v-if="detail.can_delete" class="dl-act danger" :disabled="!!acting"
                       @click="doDelete">
-                {{ acting === "delete" ? "Deleting…" : (confirmDelete ? "Tap again to delete" : "🗑 Delete") }}
+                {{ acting === "delete" ? "Deleting…" : "🗑 Delete" }}
               </button>
             </div>
           </div>
@@ -191,6 +191,18 @@
             </div>
           </div>
         </template>
+
+        <!-- ── confirmation dialog (cancel / delete) ── -->
+        <div v-if="confirm.open" class="dl-confirm-back" @click.self="confirm.open = false">
+          <div class="dl-confirm" role="dialog" aria-modal="true">
+            <div class="dl-confirm-title">{{ confirm.header }}</div>
+            <div class="dl-confirm-msg">{{ confirm.message }}</div>
+            <div class="dl-confirm-btns">
+              <button class="dl-confirm-no" @click="confirm.open = false">No, keep it</button>
+              <button class="dl-confirm-yes" @click="runConfirm">{{ confirm.yes }}</button>
+            </div>
+          </div>
+        </div>
       </ion-content>
     </ion-modal>
 
@@ -321,6 +333,7 @@ async function open(row) {
   emailOpen.value = false; emailNote.value = ""; emailErr.value = false;
   actNote.value = ""; actErr.value = false;
   payOpen.value = false; payModes.value = []; payMode.value = ""; payRef.value = "";
+  confirm.open = false;
   detail.value = { title: row.title, status: row.badge, fields: [] };
   try {
     detail.value = await getDoc(props.doctype, row.name, props.fields);
@@ -353,14 +366,28 @@ async function doSubmit() {
   }
 }
 
-const confirmCancel = ref(false);
-async function doCancel() {
-  if (!confirmCancel.value) {
-    confirmCancel.value = true;
-    setTimeout(() => { confirmCancel.value = false; }, 4000);
-    return;
-  }
-  confirmCancel.value = false;
+// One clear confirmation dialog for destructive actions. (The old
+// "tap again to confirm" pattern read as a dead button on mobile.)
+const confirm = reactive({ open: false, header: "", message: "", yes: "", run: null });
+
+function askConfirm(header, message, yes, run) {
+  Object.assign(confirm, { open: true, header, message, yes, run });
+}
+function runConfirm() {
+  const fn = confirm.run;
+  confirm.open = false;
+  if (fn) fn();
+}
+
+function doCancel() {
+  askConfirm(
+    "Cancel this document?",
+    `${detail.value.name} will be cancelled and its accounting entries reversed. `
+      + "You can amend it afterwards to make a corrected copy.",
+    "Yes, cancel it", runCancel);
+}
+
+async function runCancel() {
   acting.value = "cancel";
   actNote.value = ""; actErr.value = false;
   try {
@@ -376,14 +403,14 @@ async function doCancel() {
   }
 }
 
-const confirmDelete = ref(false);
-async function doDelete() {
-  if (!confirmDelete.value) {
-    confirmDelete.value = true;
-    setTimeout(() => { confirmDelete.value = false; }, 4000);
-    return;
-  }
-  confirmDelete.value = false;
+function doDelete() {
+  askConfirm(
+    "Delete this document?",
+    `${detail.value.name} will be permanently deleted. This cannot be undone.`,
+    "Yes, delete it", runDelete);
+}
+
+async function runDelete() {
   acting.value = "delete";
   actNote.value = ""; actErr.value = false;
   try {
@@ -663,6 +690,27 @@ onUnmounted(() => document.removeEventListener("visibilitychange", onVisibility)
 .dl-act.primary { background: #4f46e5; border-color: #4f46e5;
   color: #fff; font-weight: 800; box-shadow: 0 2px 8px rgba(79,70,229,.35); }
 .dl-act.danger { border-color: #fecaca; color: #dc2626; background: #fef2f2; }
+
+/* confirmation dialog */
+.dl-confirm-back {
+  position: fixed; inset: 0; z-index: 99999;
+  background: rgba(15, 23, 42, .45);
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+}
+.dl-confirm {
+  width: 100%; max-width: 340px; background: #fff; border-radius: 18px;
+  padding: 20px; box-shadow: 0 20px 50px rgba(15, 23, 42, .3);
+}
+.dl-confirm-title { font-size: 17px; font-weight: 800; color: #0f172a; }
+.dl-confirm-msg { font-size: 13.5px; color: #475569; margin-top: 8px; line-height: 1.5; }
+.dl-confirm-btns { display: flex; gap: 10px; margin-top: 18px; }
+.dl-confirm-no, .dl-confirm-yes {
+  flex: 1; height: 46px; border-radius: 12px; font-size: 14.5px; font-weight: 700;
+  cursor: pointer; -webkit-appearance: none;
+}
+.dl-confirm-no { background: #fff; border: 1.5px solid #d8dee9; color: #475569; }
+.dl-confirm-yes { background: #dc2626; border: none; color: #fff; }
+.dl-confirm-yes:active, .dl-confirm-no:active { transform: scale(.97); }
 
 .dl-email { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px;
   padding: 12px; margin-bottom: 14px; }
