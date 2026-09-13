@@ -184,7 +184,8 @@ def run():
     except Exception as e:
         fail.append(f"Customer money summary: {e}")
 
-    # ── every tile: open the FIRST record's detail sheet (per-doctype render) ──
+    # ── every tile: open the FIRST record's detail sheet and check the
+    #    lifecycle buttons match its state (submit/cancel/amend/delete) ──
     for doctype, _ in TILES:
         try:
             l = get_list(doctype, page_length=1)
@@ -193,7 +194,18 @@ def run():
                 continue
             d = get_doc(doctype, l["rows"][0]["name"])
             assert d.get("name") and isinstance(d.get("fields"), list)
-            ok.append(f"{doctype}: list + detail sheet render ({d['name']})")
+            meta = frappe.get_meta(doctype)
+            ds = d.get("docstatus")
+            if meta.is_submittable:
+                if ds == 0:
+                    assert d.get("can_submit") == 1, f"draft lacks can_submit: {d['name']}"
+                    assert d.get("can_delete") == 1, f"draft lacks can_delete: {d['name']}"
+                elif ds == 1:
+                    assert d.get("can_cancel") == 1, f"submitted lacks can_cancel: {d['name']}"
+                elif ds == 2:
+                    assert d.get("can_amend") == 1, f"cancelled lacks can_amend: {d['name']}"
+            ok.append(f"{doctype}: detail + lifecycle flags ok "
+                      f"({d['name']}, docstatus {ds})")
         except Exception as e:
             fail.append(f"{doctype} detail: {frappe.get_traceback().splitlines()[-1]}")
 

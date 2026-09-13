@@ -647,7 +647,10 @@ onUnmounted(() => document.removeEventListener("visibilitychange", onVisibility)
 .dl-detail-title { font-size: 15px; font-weight: 800; }
 .dl-detail-head { display: flex; align-items: center; justify-content: space-between;
   gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
-.dl-actions { display: flex; gap: 8px; margin-left: auto; }
+/* MUST wrap: on phone widths the extra buttons (Cancel/Delete/Payment/…)
+   were overflowing and getting clipped — "where is the cancel option" */
+.dl-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto;
+  justify-content: flex-end; }
 .dl-act {
   border: 1px solid #e2e8f0; background: #fff; color: #334155;
   font-size: 12.5px; font-weight: 700; border-radius: 999px; padding: 7px 13px;
