@@ -143,7 +143,7 @@ _DEFAULT_FIELDS = {
     "Journal Entry":    ["voucher_type", "posting_date", "total_debit", "user_remark"],
     "Material Request": ["material_request_type", "transaction_date", "schedule_date", "status"],
     "Quotation":        ["party_name", "transaction_date", "valid_till", "grand_total", "status"],
-    "Item":             ["item_group", "stock_uom", "standard_rate", "disabled"],
+    "Item":             ["item_group", "stock_uom", "standard_rate"],
     "Customer":         ["customer_group", "territory", "mobile_no", "customer_type"],
     "Supplier":         ["supplier_group", "country", "mobile_no", "supplier_type"],
     "Expense Claim":    ["employee_name", "posting_date", "total_claimed_amount", "total_sanctioned_amount", "status"],
@@ -371,6 +371,8 @@ def get_view(doctype, label=None, fields=None, filters=None):
         "date_label":   (meta.get_field(date_field).label if meta.get_field(date_field) else "Date"),
         "fields":       fields_meta,
         "can_create":   _can_create_native(doctype, meta),
+        "can_print":    int(bool(frappe.has_permission(doctype, "print"))),
+        "can_email":    int(bool(frappe.has_permission(doctype, "email"))),
         "cards":        _cards(doctype, meta, status_field, date_field, base),
     }
 
@@ -549,7 +551,79 @@ def get_list(doctype, search=None, start=0, page_length=20, fields=None, filters
                 item["fields"].append({"label": meta.get_field(fn).label or fn, "value": val})
         out.append(item)
 
+    if doctype == "Item":
+        _add_item_stock(out)
+    elif doctype in ("Customer", "Supplier"):
+        _add_party_money(doctype, out)
+
     return {"rows": out, "has_more": len(rows) == page_length}
+
+
+def _fmt_qty(q):
+    from frappe.utils import flt
+    q = flt(q)
+    return str(int(q)) if q == int(q) else str(round(q, 2))
+
+
+def _party_money(doctype, names):
+    """{party: {total, due}} from submitted invoices. Customer → Sales
+    Invoices (due = they owe us); Supplier → Purchase Invoices (due = we owe
+    them)."""
+    inv, field = (("Sales Invoice", "customer") if doctype == "Customer"
+                  else ("Purchase Invoice", "supplier"))
+    if not names or not frappe.db.exists("DocType", inv):
+        return {}
+    rows = frappe.db.sql(
+        f"""select `{field}`, sum(base_grand_total), sum(outstanding_amount)
+            from `tab{inv}` where docstatus = 1 and `{field}` in %(names)s
+            group by `{field}`""",
+        {"names": names})
+    return {r[0]: frappe._dict(total=r[1], due=r[2]) for r in rows}
+
+
+def _company_currency():
+    company = (frappe.defaults.get_user_default("Company")
+               or frappe.db.get_single_value("Global Defaults", "default_company"))
+    return (frappe.get_cached_value("Company", company, "default_currency")
+            if company else None) or "INR"
+
+
+def _add_party_money(doctype, rows):
+    """Prepend business totals to Customer / Supplier cards: total business
+    done + how much is still due."""
+    money = _party_money(doctype, [r["name"] for r in rows])
+    cur = _company_currency()
+    total_lbl = _("Total Sales") if doctype == "Customer" else _("Total Purchases")
+    due_lbl = _("To Receive") if doctype == "Customer" else _("To Pay")
+    from frappe.utils import flt
+    for r in rows:
+        m = money.get(r["name"])
+        total, due = (flt(m.total), flt(m.due)) if m else (0, 0)
+        fields = [{"label": total_lbl, "value": fmt_money(total, currency=cur)}]
+        if due:
+            fields.append({"label": due_lbl, "value": fmt_money(due, currency=cur)})
+        r["fields"] = fields + r["fields"]
+
+
+def _add_item_stock(rows):
+    """Prepend total available stock (sum of Bin.actual_qty) to each stock
+    item's card. Bin read permission is intentionally not required — stock
+    on the item list is the product behaviour for a trading app."""
+    codes = [r["name"] for r in rows]
+    if not codes:
+        return
+    stockable = set(frappe.get_all("Item", filters={"name": ("in", codes), "is_stock_item": 1},
+                                   pluck="name"))
+    if not stockable:
+        return
+    qty = dict(frappe.db.sql(
+        """select item_code, sum(actual_qty) from `tabBin`
+           where item_code in %(codes)s group by item_code""",
+        {"codes": list(stockable)}))
+    for r in rows:
+        if r["name"] in stockable:
+            r["fields"].insert(0, {"label": _("In Stock"),
+                                   "value": _fmt_qty(qty.get(r["name"], 0))})
 
 
 # ── detail ─────────────────────────────────────────────────────────────────────
@@ -587,6 +661,8 @@ def get_doc(doctype, name, fields=None):
     for df in source:
         if df.fieldname in _SKIP or df.fieldtype in _LAYOUT:
             continue
+        if df.fieldname in ("status", "workflow_state"):
+            continue  # already shown as the status chip
         if df.fieldtype in ("Password",) or df.fieldtype in _TECH_TYPES or df.fieldname not in perm:
             continue
         val = doc.get(df.fieldname)
@@ -598,13 +674,49 @@ def get_doc(doctype, name, fields=None):
         out_fields.append({"label": df.label or df.fieldname, "value": formatted,
                            "fieldtype": df.fieldtype})
 
-    return {
+    result = {
         "name":   doc.name,
         "title":  str(doc.get(title_field) or doc.name),
         "status": (doc.get("status") or doc.get("workflow_state") or None),
         "fields": out_fields,
         "tables": _detail_tables(meta, doc, table_spec, doctype),
     }
+
+    # Customer / Supplier detail: total business + amount still due, up top
+    if doctype in ("Customer", "Supplier"):
+        from frappe.utils import flt
+        m = _party_money(doctype, [doc.name]).get(doc.name)
+        cur = _company_currency()
+        total, due = (flt(m.total), flt(m.due)) if m else (0, 0)
+        result["fields"].insert(0, {
+            "label": _("To Receive") if doctype == "Customer" else _("To Pay"),
+            "value": fmt_money(due, currency=cur), "fieldtype": "Currency"})
+        result["fields"].insert(0, {
+            "label": _("Total Sales") if doctype == "Customer" else _("Total Purchases"),
+            "value": fmt_money(total, currency=cur), "fieldtype": "Currency"})
+
+    # Item detail: available stock up top + warehouse-wise breakup table
+    if doctype == "Item" and doc.get("is_stock_item"):
+        from frappe.utils import flt
+        bins = [b for b in frappe.get_all(
+                    "Bin", filters={"item_code": doc.name},
+                    fields=["warehouse", "actual_qty"], order_by="actual_qty desc")
+                if flt(b.actual_qty)]
+        total = sum(flt(b.actual_qty) for b in bins)
+        result["fields"].insert(0, {"label": _("Available Stock"),
+                                    "value": f"{_fmt_qty(total)} {doc.stock_uom or ''}".strip(),
+                                    "fieldtype": "Float"})
+        if bins:
+            result["tables"].insert(0, {
+                "fieldname": "_stock",
+                "label":     _("Stock by Warehouse"),
+                "count":     len(bins),
+                "columns":   [{"label": _("Warehouse"), "fieldtype": "Data"},
+                              {"label": _("Qty"), "fieldtype": "Float"}],
+                "rows":      [[b.warehouse, _fmt_qty(b.actual_qty)] for b in bins[:50]],
+            })
+
+    return result
 
 
 # ── create (self-service) ───────────────────────────────────────────────────────
@@ -615,13 +727,27 @@ _CREATE_TYPES = {
     "Check", "Phone", "Read Only",
 }
 
+# System fields hidden from the mobile create form — they're auto-filled from
+# defaults / set_missing_values server-side (company, currency, exchange rate,
+# price lists, …). Keeps New Sales Order = customer + dates + items.
+_CREATE_AUTO = {
+    "company", "currency", "conversion_rate", "plc_conversion_rate",
+    "price_list_currency", "selling_price_list", "buying_price_list",
+    "quotation_to", "order_type", "tax_category", "letter_head",
+    "language", "source", "territory", "customer_group", "supplier_group",
+    "gst_category", "cost_center", "project", "set_warehouse",
+    # accounting fields ERPNext derives on save (receivable/payable accounts)
+    "debit_to", "credit_to", "against_income_account", "expense_account",
+    "income_account", "mode_of_payment", "cash_bank_account",
+}
+
 
 def _create_fields(meta, perm, cap=12):
     """Mandatory-first creatable field list for a (parent or child) meta."""
     fields, seen = [], set()
 
     def add(df):
-        if df.fieldname in seen or df.fieldname in _SKIP:
+        if df.fieldname in seen or df.fieldname in _SKIP or df.fieldname in _CREATE_AUTO:
             return
         if df.hidden or df.read_only or df.fieldname not in perm:
             return
@@ -675,6 +801,41 @@ def _create_fields(meta, perm, cap=12):
     return fields
 
 
+# One simple mobile form for Customer / Supplier: name + mobile + GSTIN +
+# address in a single screen. The synthetic _-prefixed fields are turned into
+# a linked Address + Contact server-side (create_doc), so the user never
+# deals with separate Address/Contact doctypes. GSTIN auto-fills PAN, GST
+# category and the state (from the GSTIN state code).
+_PARTY_FORM = {
+    "Customer": "customer_name",
+    "Supplier": "supplier_name",
+}
+
+_PARTY_EXTRA_FIELDS = [
+    ("_mobile",   "Mobile Number",                  "Phone"),
+    ("_gstin",    "GSTIN (auto-fills PAN & state)", "Data"),
+    ("_address",  "Address (shop / street / area)", "Data"),
+    ("_city",     "City",                           "Data"),
+    ("_pincode",  "PIN Code",                       "Data"),
+]
+
+# GSTIN state code (first 2 digits) → state name, for the auto-created address
+_GST_STATES = {
+    "01": "Jammu and Kashmir", "02": "Himachal Pradesh", "03": "Punjab",
+    "04": "Chandigarh", "05": "Uttarakhand", "06": "Haryana", "07": "Delhi",
+    "08": "Rajasthan", "09": "Uttar Pradesh", "10": "Bihar", "11": "Sikkim",
+    "12": "Arunachal Pradesh", "13": "Nagaland", "14": "Manipur",
+    "15": "Mizoram", "16": "Tripura", "17": "Meghalaya", "18": "Assam",
+    "19": "West Bengal", "20": "Jharkhand", "21": "Odisha",
+    "22": "Chhattisgarh", "23": "Madhya Pradesh", "24": "Gujarat",
+    "26": "Dadra and Nagar Haveli and Daman and Diu", "27": "Maharashtra",
+    "29": "Karnataka", "30": "Goa", "31": "Lakshadweep Islands",
+    "32": "Kerala", "33": "Tamil Nadu", "34": "Puducherry",
+    "35": "Andaman and Nicobar Islands", "36": "Telangana",
+    "37": "Andhra Pradesh", "38": "Ladakh",
+}
+
+
 @frappe.whitelist()
 def get_create_meta(doctype):
     """Fields needed to create a record natively. Doctypes with a required
@@ -683,6 +844,15 @@ def get_create_meta(doctype):
     if not frappe.has_permission(doctype, "create"):
         frappe.throw(_("You are not permitted to create {0}").format(doctype),
                      frappe.PermissionError)
+
+    if doctype in _PARTY_FORM:
+        name_field = _PARTY_FORM[doctype]
+        fields = [{"fieldname": name_field, "label": _("Name"), "fieldtype": "Data",
+                   "options": "", "reqd": 1, "default": ""}]
+        for fn, label, ftype in _PARTY_EXTRA_FIELDS:
+            fields.append({"fieldname": fn, "label": _(label), "fieldtype": ftype,
+                           "options": "", "reqd": 0, "default": ""})
+        return {"creatable": True, "doctype": doctype, "fields": fields, "child": None}
     meta = frappe.get_meta(doctype)
     perm = _permitted_fields(meta, "write")
 
@@ -765,6 +935,14 @@ def create_doc(doctype, values):
         if key in writable and key not in skip and val not in (None, ""):
             doc.set(key, val)
 
+    # company is hidden on the mobile form (_CREATE_AUTO) — backfill it
+    if meta.has_field("company") and not doc.get("company"):
+        doc.company = (frappe.defaults.get_user_default("Company")
+                       or frappe.db.get_single_value("Global Defaults", "default_company"))
+
+    if doctype in _PARTY_FORM:
+        _apply_party_gstin(doc, (values or {}).get("_gstin"))
+
     rows = (values or {}).get(child_field) if child_field else None
     if child_field and rows:
         cmeta = frappe.get_meta(meta.get_field(child_field).options)
@@ -781,8 +959,111 @@ def create_doc(doctype, values):
                 doc.append(child_field, clean)
 
     doc.insert()
+
+    warning = None
+    if doctype in _PARTY_FORM:
+        warning = _create_party_extras(doc, values or {})
+
     frappe.db.commit()
-    return {"name": doc.name}
+    out = {"name": doc.name}
+    if warning:
+        out["warning"] = warning
+    return out
+
+
+def _apply_party_gstin(doc, gstin):
+    """GSTIN on the simple party form → gstin, PAN and GST category on the
+    party itself (fields exist when india_compliance is installed)."""
+    gstin = (gstin or "").strip().upper()
+    if not gstin:
+        return
+    if doc.meta.has_field("gstin"):
+        doc.gstin = gstin
+    if doc.meta.has_field("pan") and len(gstin) == 15:
+        doc.pan = gstin[2:12]
+    if doc.meta.has_field("gst_category"):
+        doc.gst_category = "Registered Regular"
+
+
+def _create_party_extras(doc, values):
+    """Turn the _-prefixed simple-form fields into a linked Contact (mobile)
+    and Address (street/city/PIN, state auto-derived from the GSTIN). A
+    failure here never fails the party creation — returns a warning string."""
+    name_label = doc.get(_PARTY_FORM[doc.doctype]) or doc.name
+    gstin = (values.get("_gstin") or "").strip().upper()
+    mobile = (values.get("_mobile") or "").strip()
+    problems = []
+
+    if mobile:
+        try:
+            frappe.get_doc({
+                "doctype": "Contact", "first_name": name_label,
+                "is_primary_contact": 1,
+                "phone_nos": [{"phone": mobile, "is_primary_mobile_no": 1}],
+                "links": [{"link_doctype": doc.doctype, "link_name": doc.name}],
+            }).insert(ignore_permissions=True)
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), "midhunatech: party contact")
+            problems.append(_("mobile number could not be saved"))
+
+    if values.get("_address") or values.get("_city") or values.get("_pincode"):
+        try:
+            addr = {
+                "doctype": "Address", "address_title": name_label,
+                "address_type": "Billing",
+                "address_line1": values.get("_address") or name_label,
+                "city": values.get("_city") or "",
+                "pincode": values.get("_pincode") or "",
+                "is_primary_address": 1, "is_shipping_address": 1,
+                "links": [{"link_doctype": doc.doctype, "link_name": doc.name}],
+            }
+            state = _GST_STATES.get(gstin[:2]) if gstin else None
+            if state:
+                addr["state"] = state
+            if frappe.db.exists("Country", "India"):
+                addr["country"] = "India"
+            adoc = frappe.get_doc(addr)
+            if gstin and adoc.meta.has_field("gstin"):
+                adoc.gstin = gstin
+            adoc.insert(ignore_permissions=True)
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), "midhunatech: party address")
+            problems.append(_("address could not be saved"))
+
+    if problems:
+        return _("Saved, but {0} — you can add it from the desk later.").format(
+            _(" and ").join(problems))
+    return None
+
+
+@frappe.whitelist()
+def email_doc(doctype, name, recipients, subject=None, message=None):
+    """Email a document with its PDF attached (default print format), the
+    way the desk's Email button does — but one tap from the PWA."""
+    doc = frappe.get_doc(doctype, name)
+    doc.check_permission("email")
+    recipients = (recipients or "").strip()
+    if not recipients:
+        frappe.throw(_("Enter a recipient email address"))
+
+    subject = (subject or "").strip() or f"{_(doctype)} {name}"
+    message = (message or "").strip() or _("Please find attached {0} {1}.").format(_(doctype), name)
+
+    try:
+        attachment = frappe.attach_print(doctype, name, doc=doc,
+                                         print_letterhead=True)
+        frappe.sendmail(
+            recipients=[r.strip() for r in recipients.replace(";", ",").split(",") if r.strip()],
+            subject=subject,
+            message=message,
+            attachments=[attachment],
+            reference_doctype=doctype,
+            reference_name=name,
+        )
+    except frappe.OutgoingEmailError:
+        frappe.throw(_("No outgoing email account is set up on this site. "
+                       "Ask your administrator to configure one (Settings → Email Account)."))
+    return {"ok": True}
 
 
 # ── dashboard (KPI / number cards) ──────────────────────────────────────────────

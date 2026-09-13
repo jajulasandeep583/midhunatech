@@ -20,10 +20,6 @@
           <ion-label>{{ m.nav_label || m.label }}</ion-label>
         </ion-tab-button>
 
-        <ion-tab-button v-if="appConfig.show_attendance" tab="checkin" href="/midhunatech/checkin">
-          <ion-icon :icon="timeOutline" aria-hidden="true" />
-          <ion-label>Attendance</ion-label>
-        </ion-tab-button>
         <ion-tab-button tab="profile" href="/midhunatech/profile">
           <ion-icon :icon="personOutline" aria-hidden="true" />
           <ion-label>Profile</ion-label>
@@ -39,7 +35,7 @@ import {
   IonPage, IonTabs, IonTabBar, IonTabButton,
   IonIcon, IonLabel, IonRouterOutlet,
 } from "@ionic/vue";
-import { homeOutline, personOutline, timeOutline } from "ionicons/icons";
+import { homeOutline, personOutline } from "ionicons/icons";
 import { appConfig } from "@/data/session.js";
 
 // max 3 custom tabs so the bar stays usable on small phones

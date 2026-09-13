@@ -59,6 +59,9 @@ export const getList = (doctype, { search, start, page_length, fields, filters }
 export const getDoc = (doctype, name, fields) =>
   call("midhunatech.api.data.get_doc", { doctype, name, fields });
 
+export const emailDoc = (doctype, name, recipients, message) =>
+  callPost("midhunatech.api.data.email_doc", { doctype, name, recipients, message });
+
 // Map a status string to a soft badge palette (works for any doctype)
 export function badgeClass(status) {
   const s = (status || "").toLowerCase();

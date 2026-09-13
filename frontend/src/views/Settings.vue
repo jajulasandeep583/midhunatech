@@ -48,10 +48,6 @@
               <input v-model="cfg.theme_color" type="color" />
             </div>
           </div>
-          <label class="st-check">
-            <input v-model="cfg.show_attendance" type="checkbox" :true-value="1" :false-value="0" />
-            Show Attendance / Check-in
-          </label>
         </div>
 
         <!-- ── Notifications & alerts ── -->

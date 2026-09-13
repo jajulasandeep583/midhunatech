@@ -93,12 +93,38 @@
       <ion-content class="ion-padding">
         <div v-if="detailLoading" class="dl-empty"><ion-spinner name="crescent" color="primary" /></div>
         <template v-else-if="detail">
-          <span v-if="detail.status" class="dl-badge" :class="badgeClass(detail.status)" style="margin-bottom:14px;display:inline-block;">
-            {{ detail.status }}
-          </span>
-          <div class="dl-field" v-for="(f, i) in detail.fields" :key="i">
-            <div class="dl-field-lbl">{{ f.label }}</div>
-            <div class="dl-field-val">{{ f.value }}</div>
+          <div class="dl-detail-head">
+            <span v-if="detail.status" class="dl-badge" :class="badgeClass(detail.status)">
+              {{ detail.status }}
+            </span>
+            <div v-if="detail.name && (view.can_print || view.can_email)" class="dl-actions">
+              <button v-if="view.can_print" class="dl-act" @click="openPrint">🖨️ Print</button>
+              <button v-if="view.can_print" class="dl-act" @click="openPdf">📄 PDF</button>
+              <button v-if="view.can_email" class="dl-act" :class="{ on: emailOpen }"
+                      @click="emailOpen = !emailOpen">✉️ Email</button>
+            </div>
+          </div>
+
+          <!-- inline email (PDF attached) -->
+          <div v-if="emailOpen" class="dl-email">
+            <input v-model="emailTo" type="email" class="dl-email-input"
+                   placeholder="To — email address" />
+            <textarea v-model="emailMsg" rows="2" class="dl-email-input"
+                      placeholder="Message (optional)"></textarea>
+            <button class="dl-email-send" :disabled="!emailTo || emailSending" @click="doEmail">
+              {{ emailSending ? "Sending…" : "Send with PDF attached" }}
+            </button>
+            <div v-if="emailNote" class="dl-email-note" :class="{ err: emailErr }" role="alert">
+              {{ emailNote }}
+            </div>
+          </div>
+
+          <div class="dl-fieldgrid">
+            <div class="dl-field" v-for="(f, i) in detail.fields" :key="i"
+                 :class="{ wide: String(f.value).length > 26, money: f.fieldtype === 'Currency' }">
+              <div class="dl-field-lbl">{{ f.label }}</div>
+              <div class="dl-field-val">{{ f.value }}</div>
+            </div>
           </div>
 
           <!-- child tables (items, taxes, accounts, …) -->
@@ -150,7 +176,7 @@ import {
   IonInfiniteScrollContent, IonModal, IonHeader, IonToolbar, IonTitle,
   IonButtons, IonContent, IonSpinner, IonToast,
 } from "@ionic/vue";
-import { getView, getList, getDoc, badgeClass } from "@/data/docdata.js";
+import { getView, getList, getDoc, emailDoc, badgeClass } from "@/data/docdata.js";
 
 const NUM_COL_TYPES = new Set(["Currency", "Float", "Int", "Percent"]);
 function isNumCol(c) { return !!c && NUM_COL_TYPES.has(c.fieldtype); }
@@ -234,6 +260,7 @@ async function loadMore(ev) {
 
 async function open(row) {
   detailLoading.value = true;
+  emailOpen.value = false; emailNote.value = ""; emailErr.value = false;
   detail.value = { title: row.title, status: row.badge, fields: [] };
   try {
     detail.value = await getDoc(props.doctype, row.name, props.fields);
@@ -242,6 +269,39 @@ async function open(row) {
       fields: [{ label: "Error", value: e.message }] };
   } finally {
     detailLoading.value = false;
+  }
+}
+
+// ── print / pdf / email actions ──
+const emailOpen = ref(false);
+const emailTo = ref("");
+const emailMsg = ref("");
+const emailSending = ref(false);
+const emailNote = ref("");
+const emailErr = ref(false);
+
+function docUrlParams() {
+  return `doctype=${encodeURIComponent(props.doctype)}&name=${encodeURIComponent(detail.value?.name || "")}`;
+}
+function openPrint() {
+  window.open(`/printview?${docUrlParams()}&trigger_print=1`, "_blank");
+}
+function openPdf() {
+  window.open(`/api/method/frappe.utils.print_format.download_pdf?${docUrlParams()}`, "_blank");
+}
+async function doEmail() {
+  emailSending.value = true;
+  emailNote.value = "";
+  emailErr.value = false;
+  try {
+    await emailDoc(props.doctype, detail.value.name, emailTo.value, emailMsg.value);
+    emailNote.value = `Sent to ${emailTo.value}`;
+    emailTo.value = ""; emailMsg.value = "";
+  } catch (e) {
+    emailErr.value = true;
+    emailNote.value = e.message || "Could not send.";
+  } finally {
+    emailSending.value = false;
   }
 }
 
@@ -365,11 +425,42 @@ onUnmounted(() => document.removeEventListener("visibilitychange", onVisibility)
 
 /* detail sheet */
 .dl-detail-title { font-size: 15px; font-weight: 800; }
-.dl-field { padding: 11px 0; border-bottom: 1px solid #f1f5f9; }
-.dl-field:last-child { border-bottom: none; }
-.dl-field-lbl { font-size: 11.5px; font-weight: 700; color: #94a3b8; text-transform: uppercase;
+.dl-detail-head { display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.dl-actions { display: flex; gap: 8px; margin-left: auto; }
+.dl-act {
+  border: 1px solid #e2e8f0; background: #fff; color: #334155;
+  font-size: 12.5px; font-weight: 700; border-radius: 999px; padding: 7px 13px;
+  cursor: pointer; -webkit-appearance: none; white-space: nowrap;
+}
+.dl-act:active { transform: scale(.95); }
+.dl-act.on { border-color: var(--ion-color-primary); color: var(--ion-color-primary);
+  background: #eef2ff; }
+
+.dl-email { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px;
+  padding: 12px; margin-bottom: 14px; }
+.dl-email-input {
+  width: 100%; border: 1px solid #d8dee9; border-radius: 10px; padding: 10px 12px;
+  font-size: 14px; background: #fff; color: #1e293b; margin-bottom: 8px;
+  font-family: inherit; -webkit-appearance: none;
+}
+.dl-email-input:focus { outline: none; border-color: var(--ion-color-primary); }
+.dl-email-send {
+  width: 100%; height: 42px; border: none; border-radius: 10px;
+  background: var(--ion-color-primary); color: #fff; font-size: 14px; font-weight: 700;
+  cursor: pointer; -webkit-appearance: none;
+}
+.dl-email-send:disabled { opacity: .5; }
+.dl-email-note { margin-top: 8px; font-size: 12.5px; color: #15803d; text-align: center; }
+.dl-email-note.err { color: #dc2626; }
+
+.dl-fieldgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+.dl-field { padding: 10px 0; border-bottom: 1px solid #f1f5f9; min-width: 0; }
+.dl-field.wide { grid-column: 1 / -1; }
+.dl-field-lbl { font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase;
   letter-spacing: .3px; }
-.dl-field-val { font-size: 14.5px; color: #1e293b; margin-top: 3px; word-break: break-word; }
+.dl-field-val { font-size: 14px; color: #1e293b; margin-top: 3px; word-break: break-word; }
+.dl-field.money .dl-field-val { font-weight: 800; font-variant-numeric: tabular-nums; }
 
 /* floating create button */
 .dl-fab {

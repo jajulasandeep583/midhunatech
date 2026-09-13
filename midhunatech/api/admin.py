@@ -14,7 +14,7 @@ from frappe import _
 
 CONFIG_FIELDS = [
     "app_name", "theme_color", "primary_color", "secondary_color",
-    "accent_color", "show_attendance", "bottom_nav_enabled",
+    "accent_color", "bottom_nav_enabled",
 ]
 
 MODULE_FIELDS = [

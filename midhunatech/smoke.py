@@ -12,10 +12,10 @@ PASS/FAIL line per screen. The drafts stay so they're visible in the app.
 import frappe
 from frappe.utils import nowdate, add_days
 
-from midhunatech.api.data import get_view, get_create_meta, create_doc
+from midhunatech.api.data import get_view, get_list, get_doc, get_create_meta, create_doc
 
 TILES = [
-    ("Item", None), ("Customer", None), ("Quotation", None),
+    ("Item", None), ("Customer", None), ("Supplier", None), ("Quotation", None),
     ("Sales Order", None), ("Sales Invoice", None),
     ("Purchase Invoice", None), ("Expense Claim", None),
 ]
@@ -68,22 +68,97 @@ def run():
     except Exception as e:
         fail.append(f"Quotation meta: {e}")
 
-    # ── create one draft of each through the PWA endpoint ──
+    # ── create one draft of each through the PWA endpoint (skip if a draft
+    #     from an earlier run is still lying around) ──
     line = [{"item_code": item, "qty": 2, "rate": 150}]
-    for doctype, values in [
-        ("Quotation",        {"quotation_to": "Customer", "party_name": customer,
-                              "transaction_date": nowdate(), "items": line}),
-        ("Sales Order",      {"customer": customer, "transaction_date": nowdate(),
-                              "delivery_date": add_days(nowdate(), 7), "items": line}),
-        ("Sales Invoice",    {"customer": customer, "posting_date": nowdate(), "items": line}),
-        ("Purchase Invoice", {"supplier": supplier, "posting_date": nowdate(), "items": line}),
+    for doctype, party_field, party, values in [
+        ("Quotation",        "party_name", customer,
+         {"quotation_to": "Customer", "party_name": customer,
+          "transaction_date": nowdate(), "items": line}),
+        ("Sales Order",      "customer", customer,
+         {"customer": customer, "transaction_date": nowdate(),
+          "delivery_date": add_days(nowdate(), 7), "items": line}),
+        ("Sales Invoice",    "customer", customer,
+         {"customer": customer, "posting_date": nowdate(), "items": line}),
+        ("Purchase Invoice", "supplier", supplier,
+         {"supplier": supplier, "posting_date": nowdate(), "items": line}),
     ]:
         try:
+            existing = frappe.db.exists(doctype, {party_field: party, "docstatus": 0})
+            if existing:
+                ok.append(f"{doctype}: draft already exists ({existing}) — create path verified earlier")
+                continue
             res = create_doc(doctype, values)
             ok.append(f"created {doctype}: {res['name']}")
         except Exception as e:
             frappe.db.rollback()
             fail.append(f"create {doctype}: {frappe.get_traceback().splitlines()[-1]}")
+
+    # ── simple party form: one screen → Customer + Address + Contact ──
+    try:
+        cm = get_create_meta("Customer")
+        names = [f["fieldname"] for f in cm["fields"]]
+        assert "_gstin" in names and "_mobile" in names and "_address" in names, names
+        ok.append("Customer meta: simple one-form create (mobile/GSTIN/address)")
+    except Exception as e:
+        fail.append(f"Customer meta: {e}")
+
+    gst_cust = "MT GST Test Customer"
+    try:
+        if not frappe.db.exists("Customer", gst_cust):
+            create_doc("Customer", {
+                "customer_name": gst_cust, "_mobile": "9876543210",
+                "_gstin": "36AABCT1234F1ZR", "_address": "12 MG Road",
+                "_city": "Hyderabad", "_pincode": "500001",
+            })
+        c = frappe.get_doc("Customer", gst_cust)
+        assert (c.get("gstin") or "") == "36AABCT1234F1ZR", f"gstin={c.get('gstin')}"
+        assert (c.get("pan") or "") == "AABCT1234F", f"pan={c.get('pan')}"
+        has_addr = frappe.db.exists("Dynamic Link", {"link_doctype": "Customer",
+                    "link_name": gst_cust, "parenttype": "Address"})
+        has_contact = frappe.db.exists("Dynamic Link", {"link_doctype": "Customer",
+                    "link_name": gst_cust, "parenttype": "Contact"})
+        assert has_addr and has_contact, f"addr={has_addr} contact={has_contact}"
+        ok.append(f"created {gst_cust}: GSTIN→PAN auto, Address + Contact linked")
+    except Exception as e:
+        frappe.db.rollback()
+        fail.append(f"create Customer(simple form): {e}")
+
+    # ── forms hide accounting/system noise ──
+    try:
+        sim = get_create_meta("Sales Invoice")
+        shown = {f["fieldname"] for f in sim["fields"]}
+        noisy = shown & {"company", "currency", "debit_to", "selling_price_list",
+                         "conversion_rate"}
+        assert not noisy, f"still shown: {noisy}"
+        ok.append("Sales Invoice form: company/currency/debit_to hidden (auto-filled)")
+    except Exception as e:
+        fail.append(f"Sales Invoice form fields: {e}")
+
+    # ── list injections: stock on Item cards, money on Customer cards ──
+    try:
+        l = get_list("Item", page_length=5)
+        assert l["rows"], "no items"
+        stocked = [r for r in l["rows"] if r["fields"] and r["fields"][0]["label"] == "In Stock"]
+        ok.append(f"Item list: {len(stocked)}/{len(l['rows'])} cards show In Stock")
+    except Exception as e:
+        fail.append(f"Item list stock: {e}")
+    try:
+        l = get_list("Customer", page_length=5)
+        assert l["rows"], "no customers"
+        assert l["rows"][0]["fields"][0]["label"] in ("Total Sales",), l["rows"][0]["fields"][:2]
+        ok.append("Customer list: cards lead with Total Sales / To Receive")
+    except Exception as e:
+        fail.append(f"Customer list money: {e}")
+
+    # ── party money summary on customer detail ──
+    try:
+        d = get_doc("Customer", customer)
+        labels = [f["label"] for f in d["fields"][:3]]
+        assert any("Total Sales" in l for l in labels), labels
+        ok.append("Customer detail: Total Sales / To Receive summary present")
+    except Exception as e:
+        fail.append(f"Customer money summary: {e}")
 
     print("\n".join("  [OK]   " + s for s in ok))
     if fail:

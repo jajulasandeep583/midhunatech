@@ -131,15 +131,10 @@ def get_config():
 
     modules.sort(key=lambda x: x["order"])
 
-    # missing/never-saved value counts as ON so older sites keep the feature
-    show_attendance = cfg.get("show_attendance")
-    show_attendance = 1 if show_attendance is None else int(show_attendance)
-
     return {
         "app_name":      cfg.app_name      or "Midhunatech",
         "theme_color":   cfg.theme_color   or "#6366f1",
         "primary_color": cfg.primary_color or "#6366f1",
-        "show_attendance": show_attendance,
         "build_v":       _build_version(),
         "modules":       modules,
         "user":          frappe.session.user,

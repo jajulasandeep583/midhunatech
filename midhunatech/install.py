@@ -10,6 +10,7 @@ import frappe
 NATIVE_MODULES = [
     ("Items",            "items",            "box",       "#f59e0b", "/items",            "Item"),
     ("Customers",        "customers",        "users",     "#0ea5e9", "/customers",        "Customer"),
+    ("Suppliers",        "suppliers",        "🏭",        "#f97316", "/suppliers",        "Supplier"),
     ("Quotation",        "quotation",        "file",      "#6366f1", "/quotation",        "Quotation"),
     ("Sales Order",      "sales_order",      "clipboard", "#22c55e", "/sales_order",      "Sales Order"),
     ("Sales Invoice",    "sales_invoice",    "dollar",    "#10b981", "/sales_invoice",    "Sales Invoice"),
@@ -100,9 +101,6 @@ def seed_default_modules():
         cfg.app_name      = "Midhunatech ERP"
         cfg.theme_color   = "#6366f1"
         cfg.primary_color = "#6366f1"
-        # Business app for MSMEs — no HR check-in card / Attendance tab
-        if hasattr(cfg, "show_attendance"):
-            cfg.show_attendance = 0
 
     existing = {r.module_name for r in cfg.get("modules", [])}
     order = max([int(r.display_order or 0) for r in cfg.get("modules", [])] or [0])
