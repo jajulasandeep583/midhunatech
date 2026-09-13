@@ -139,10 +139,12 @@
               <option value="">— default —</option>
               <option v-for="m in payModes" :key="m" :value="m">{{ m }}</option>
             </select>
+            <label class="dl-mini-lbl">Reference no. — cheque / UTR (optional)</label>
             <input v-model="payRef" type="text" class="dl-email-input"
-                   placeholder="Reference no. (cheque / UTR — optional)" />
+                   placeholder="leave blank to auto-fill" />
             <button class="dl-email-send" :disabled="!payAmount || acting" @click="doPay">
-              {{ acting === "pay" ? "Recording…" : "Record Payment" }}
+              {{ acting === "pay" ? "Recording…"
+                 : (!payAmount ? "Enter the amount above first" : "Record Payment") }}
             </button>
           </div>
 
