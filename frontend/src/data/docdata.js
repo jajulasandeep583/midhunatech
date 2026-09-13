@@ -3,20 +3,34 @@
 
 import { apiFetch } from "./session.js";
 
+// Pull the REAL error out of a failed response. _server_messages can hold
+// several messages — info ones (e.g. "Item Price added …") must not mask the
+// actual validation error, so prefer the message that raised / is red, then
+// fall back to the last one, then the exception line.
+async function errMessage(r) {
+  let msg = `HTTP ${r.status}`;
+  try {
+    const e = await r.json();
+    const raw = e._server_messages ? JSON.parse(e._server_messages) : [];
+    const parsed = raw.map((m) => {
+      try { return JSON.parse(m); } catch { return { message: m }; }
+    });
+    const pick = parsed.find((m) => m.raise_exception || m.indicator === "red")
+      || parsed[parsed.length - 1];
+    msg = (pick && pick.message)
+      || (e.exception && String(e.exception).split(":").slice(1).join(":"))
+      || e.message || msg;
+    msg = String(msg).replace(/<[^>]*>/g, "").trim() || `HTTP ${r.status}`;
+  } catch { /* ignore */ }
+  return msg;
+}
+
 async function call(method, params = {}) {
   const qs = new URLSearchParams(
     Object.fromEntries(Object.entries(params).filter(([, v]) => v != null && v !== "")),
   ).toString();
   const r = await apiFetch(`/api/method/${method}${qs ? `?${qs}` : ""}`);
-  if (!r.ok) {
-    let msg = `HTTP ${r.status}`;
-    try {
-      const e = await r.json();
-      msg = (e._server_messages && JSON.parse(e._server_messages)[0]) || e.message || msg;
-      try { msg = JSON.parse(msg).message || msg; } catch { /* plain string */ }
-    } catch { /* ignore */ }
-    throw new Error(msg);
-  }
+  if (!r.ok) throw new Error(await errMessage(r));
   return (await r.json()).message;
 }
 
@@ -25,16 +39,7 @@ async function callPost(method, body = {}) {
     method: "POST",
     body: JSON.stringify(body),
   });
-  if (!r.ok) {
-    let msg = `HTTP ${r.status}`;
-    try {
-      const e = await r.json();
-      msg = (e._server_messages && JSON.parse(e._server_messages)[0]) || e.message || msg;
-      try { msg = JSON.parse(msg).message || msg; } catch { /* plain */ }
-      msg = String(msg).replace(/<[^>]*>/g, "");
-    } catch { /* ignore */ }
-    throw new Error(msg);
-  }
+  if (!r.ok) throw new Error(await errMessage(r));
   return (await r.json()).message;
 }
 
@@ -61,6 +66,12 @@ export const getDoc = (doctype, name, fields) =>
 
 export const emailDoc = (doctype, name, recipients, message) =>
   callPost("midhunatech.api.data.email_doc", { doctype, name, recipients, message });
+
+export const submitDoc = (doctype, name) =>
+  callPost("midhunatech.api.data.submit_doc", { doctype, name });
+
+export const generateEinvoice = (name) =>
+  callPost("midhunatech.api.data.generate_einvoice", { name });
 
 // Map a status string to a soft badge palette (works for any doctype)
 export function badgeClass(status) {

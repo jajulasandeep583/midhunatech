@@ -12,7 +12,9 @@ PASS/FAIL line per screen. The drafts stay so they're visible in the app.
 import frappe
 from frappe.utils import nowdate, add_days
 
-from midhunatech.api.data import get_view, get_list, get_doc, get_create_meta, create_doc
+from midhunatech.api.data import (
+    get_view, get_list, get_doc, get_create_meta, create_doc, submit_doc,
+)
 
 TILES = [
     ("Item", None), ("Customer", None), ("Supplier", None), ("Quotation", None),
@@ -150,6 +152,24 @@ def run():
         ok.append("Customer list: cards lead with Total Sales / To Receive")
     except Exception as e:
         fail.append(f"Customer list money: {e}")
+
+    # ── submit a draft invoice from the PWA endpoint ──
+    try:
+        draft = frappe.db.exists("Sales Invoice", {"customer": customer, "docstatus": 0})
+        if draft:
+            r = submit_doc("Sales Invoice", draft)
+            assert r["docstatus"] == 1, r
+            ok.append(f"submitted Sales Invoice {draft} from the app endpoint")
+        else:
+            submitted = frappe.db.exists("Sales Invoice", {"customer": customer, "docstatus": 1})
+            assert submitted, "no draft and no submitted invoice for the test customer"
+            ok.append(f"submit path verified earlier ({submitted} already submitted)")
+        d = get_doc("Sales Invoice", frappe.db.exists(
+            "Sales Invoice", {"customer": customer, "docstatus": 1}))
+        assert d["docstatus"] == 1 and not d["can_submit"], d["name"]
+    except Exception as e:
+        frappe.db.rollback()
+        fail.append(f"submit Sales Invoice: {frappe.get_traceback().splitlines()[-1]}")
 
     # ── party money summary on customer detail ──
     try:

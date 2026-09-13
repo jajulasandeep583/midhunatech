@@ -678,6 +678,10 @@ def get_doc(doctype, name, fields=None):
         "name":   doc.name,
         "title":  str(doc.get(title_field) or doc.name),
         "status": (doc.get("status") or doc.get("workflow_state") or None),
+        "docstatus": doc.docstatus,
+        "can_submit": int(bool(meta.is_submittable and doc.docstatus == 0
+                               and frappe.has_permission(doctype, "submit", doc=doc))),
+        "can_einvoice": _einvoice_available(doc),
         "fields": out_fields,
         "tables": _detail_tables(meta, doc, table_spec, doctype),
     }
@@ -1034,6 +1038,45 @@ def _create_party_extras(doc, values):
         return _("Saved, but {0} — you can add it from the desk later.").format(
             _(" and ").join(problems))
     return None
+
+
+def _einvoice_available(doc):
+    """1 when the india_compliance e-Invoice button should show: submitted
+    Sales Invoice, no IRN yet, and e-invoicing applicable per GST Settings."""
+    if doc.doctype != "Sales Invoice" or doc.docstatus != 1 or doc.get("irn"):
+        return 0
+    try:
+        from india_compliance.gst_india.utils.e_invoice import (
+            validate_e_invoice_applicability,
+        )
+        return 1 if validate_e_invoice_applicability(doc, throw=False) else 0
+    except ImportError:
+        return 0
+    except Exception:
+        return 0
+
+
+@frappe.whitelist()
+def submit_doc(doctype, name):
+    """Submit a draft from the PWA (doc.submit() enforces permissions and
+    runs the full validation/GL posting)."""
+    doc = frappe.get_doc(doctype, name)
+    doc.submit()
+    frappe.db.commit()
+    return {"name": doc.name, "docstatus": doc.docstatus}
+
+
+@frappe.whitelist()
+def generate_einvoice(name):
+    """Generate the IRN/e-Invoice for a submitted Sales Invoice through
+    india_compliance (needs GST API credentials in GST Settings)."""
+    frappe.has_permission("Sales Invoice", "submit", doc=name, throw=True)
+    try:
+        from india_compliance.gst_india.utils.e_invoice import generate_e_invoice
+    except ImportError:
+        frappe.throw(_("India Compliance is not installed on this site."))
+    generate_e_invoice(name, throw=True)
+    return {"irn": frappe.db.get_value("Sales Invoice", name, "irn")}
 
 
 @frappe.whitelist()

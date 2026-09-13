@@ -97,13 +97,20 @@
             <span v-if="detail.status" class="dl-badge" :class="badgeClass(detail.status)">
               {{ detail.status }}
             </span>
-            <div v-if="detail.name && (view.can_print || view.can_email)" class="dl-actions">
+            <div v-if="detail.name" class="dl-actions">
+              <button v-if="detail.can_submit" class="dl-act primary" :disabled="acting"
+                      @click="doSubmit">{{ acting === "submit" ? "Submitting…" : "✓ Submit" }}</button>
+              <button v-if="detail.can_einvoice" class="dl-act" :disabled="acting"
+                      @click="doEinvoice">{{ acting === "einv" ? "Generating…" : "🧾 e-Invoice" }}</button>
               <button v-if="view.can_print" class="dl-act" @click="openPrint">🖨️ Print</button>
               <button v-if="view.can_print" class="dl-act" @click="openPdf">📄 PDF</button>
               <button v-if="view.can_email" class="dl-act" :class="{ on: emailOpen }"
                       @click="emailOpen = !emailOpen">✉️ Email</button>
             </div>
           </div>
+
+          <div v-if="actNote" class="dl-email-note" :class="{ err: actErr }"
+               style="margin-bottom:10px;" role="alert">{{ actNote }}</div>
 
           <!-- inline email (PDF attached) -->
           <div v-if="emailOpen" class="dl-email">
@@ -176,7 +183,9 @@ import {
   IonInfiniteScrollContent, IonModal, IonHeader, IonToolbar, IonTitle,
   IonButtons, IonContent, IonSpinner, IonToast,
 } from "@ionic/vue";
-import { getView, getList, getDoc, emailDoc, badgeClass } from "@/data/docdata.js";
+import {
+  getView, getList, getDoc, emailDoc, submitDoc, generateEinvoice, badgeClass,
+} from "@/data/docdata.js";
 
 const NUM_COL_TYPES = new Set(["Currency", "Float", "Int", "Percent"]);
 function isNumCol(c) { return !!c && NUM_COL_TYPES.has(c.fieldtype); }
@@ -261,6 +270,7 @@ async function loadMore(ev) {
 async function open(row) {
   detailLoading.value = true;
   emailOpen.value = false; emailNote.value = ""; emailErr.value = false;
+  actNote.value = ""; actErr.value = false;
   detail.value = { title: row.title, status: row.badge, fields: [] };
   try {
     detail.value = await getDoc(props.doctype, row.name, props.fields);
@@ -269,6 +279,42 @@ async function open(row) {
       fields: [{ label: "Error", value: e.message }] };
   } finally {
     detailLoading.value = false;
+  }
+}
+
+// ── submit / e-invoice actions ──
+const acting = ref("");
+const actNote = ref("");
+const actErr = ref(false);
+
+async function doSubmit() {
+  acting.value = "submit";
+  actNote.value = ""; actErr.value = false;
+  try {
+    await submitDoc(props.doctype, detail.value.name);
+    toast.value = `${detail.value.title || detail.value.name} submitted`;
+    detail.value = await getDoc(props.doctype, detail.value.name, props.fields);
+    softRefresh();
+  } catch (e) {
+    actErr.value = true;
+    actNote.value = e.message || "Could not submit.";
+  } finally {
+    acting.value = "";
+  }
+}
+
+async function doEinvoice() {
+  acting.value = "einv";
+  actNote.value = ""; actErr.value = false;
+  try {
+    const r = await generateEinvoice(detail.value.name);
+    actNote.value = r.irn ? `e-Invoice generated — IRN ${r.irn}` : "e-Invoice generated";
+    detail.value = await getDoc(props.doctype, detail.value.name, props.fields);
+  } catch (e) {
+    actErr.value = true;
+    actNote.value = e.message || "Could not generate e-Invoice.";
+  } finally {
+    acting.value = "";
   }
 }
 
@@ -434,8 +480,11 @@ onUnmounted(() => document.removeEventListener("visibilitychange", onVisibility)
   cursor: pointer; -webkit-appearance: none; white-space: nowrap;
 }
 .dl-act:active { transform: scale(.95); }
+.dl-act:disabled { opacity: .55; }
 .dl-act.on { border-color: var(--ion-color-primary); color: var(--ion-color-primary);
   background: #eef2ff; }
+.dl-act.primary { background: var(--ion-color-primary); border-color: var(--ion-color-primary);
+  color: #fff; }
 
 .dl-email { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px;
   padding: 12px; margin-bottom: 14px; }
