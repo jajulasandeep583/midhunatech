@@ -962,7 +962,8 @@ _PARTY_EXTRA_FIELDS = [
     ("_mobile",   "Mobile Number",                  "Phone"),
     ("_gstin",    "GSTIN (auto-fills PAN & state)", "Data"),
     ("_address",  "Address (shop / street / area)", "Data"),
-    ("_city",     "City",                           "Data"),
+    ("_city",     "City / District",                "Data"),
+    ("_state",    "State",                          "Select"),
     ("_pincode",  "PIN Code",                       "Data"),
 ]
 
@@ -1035,11 +1036,13 @@ def get_create_meta(doctype):
 
     if doctype in _PARTY_FORM:
         name_field = _PARTY_FORM[doctype]
+        states = "\n".join(sorted(set(_GST_STATES.values())))
         fields = [{"fieldname": name_field, "label": _("Name"), "fieldtype": "Data",
                    "options": "", "reqd": 1, "default": ""}]
         for fn, label, ftype in _PARTY_EXTRA_FIELDS:
             fields.append({"fieldname": fn, "label": _(label), "fieldtype": ftype,
-                           "options": "", "reqd": 0, "default": ""})
+                           "options": states if fn == "_state" else "",
+                           "reqd": 0, "default": ""})
         return {"creatable": True, "doctype": doctype, "fields": fields,
                 "child": None, "submittable": 0}
     meta = frappe.get_meta(doctype)
@@ -1075,6 +1078,18 @@ def get_create_meta(doctype):
         for f in fields:
             if f["fieldname"] in spec.get("parent_reqd", ()):
                 f["reqd"] = 1
+
+    # taxable docs: let the user pick the GST template like the desk does —
+    # blank means auto (In-State/Out-State by the customer's state)
+    if doctype in _TAXABLE_DOCTYPES and meta.has_field("taxes_and_charges"):
+        templates = frappe.get_all(_taxes_master(doctype), filters={"disabled": 0},
+                                   pluck="name")
+        if templates:
+            fields.append({"fieldname": "_taxes",
+                           "label": _("Taxes (blank = auto by customer state)"),
+                           "fieldtype": "Select",
+                           "options": "\n".join(templates),
+                           "reqd": 0, "default": ""})
 
     return {"creatable": True, "doctype": doctype, "fields": fields, "child": child,
             "submittable": int(bool(meta.is_submittable
@@ -1146,6 +1161,11 @@ def create_doc(doctype, values, submit=0):
 
     if doctype in _PARTY_FORM:
         _apply_party_gstin(doc, (values or {}).get("_gstin"))
+
+    # explicitly chosen taxes template wins; blank = auto by customer state
+    chosen_taxes = (values or {}).get("_taxes")
+    if chosen_taxes and doctype in _TAXABLE_DOCTYPES and not doc.get("taxes"):
+        _append_taxes(doc, chosen_taxes)
 
     _set_gst_tax_category(doc)
     _apply_taxes_template(doc)
@@ -1237,6 +1257,25 @@ def _set_gst_tax_category(doc):
         doc.tax_category = "In-State"   # local trade is the MSME default
 
 
+def _taxes_master(doctype):
+    return ("Sales Taxes and Charges Template"
+            if doctype in ("Quotation", "Sales Order", "Sales Invoice",
+                           "Delivery Note")
+            else "Purchase Taxes and Charges Template")
+
+
+def _append_taxes(doc, tname):
+    """Set the named taxes template on the doc and copy in its rows."""
+    try:
+        from erpnext.controllers.accounts_controller import get_taxes_and_charges
+        master = _taxes_master(doc.doctype)
+        doc.taxes_and_charges = tname
+        for row in get_taxes_and_charges(master, tname) or []:
+            doc.append("taxes", row)
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "midhunatech: taxes template")
+
+
 def _apply_taxes_template(doc):
     """Copy the tax rows from the taxes template matching the document's
     tax category (fallback: the default template). The desk does this from
@@ -1245,10 +1284,7 @@ def _apply_taxes_template(doc):
         return
     if not doc.meta.has_field("taxes_and_charges") or not doc.get("company"):
         return
-    master = ("Sales Taxes and Charges Template"
-              if doc.doctype in ("Quotation", "Sales Order", "Sales Invoice",
-                                 "Delivery Note")
-              else "Purchase Taxes and Charges Template")
+    master = _taxes_master(doc.doctype)
     tname = None
     if doc.get("tax_category"):
         tname = frappe.db.get_value(master, {"company": doc.company, "disabled": 0,
@@ -1256,15 +1292,8 @@ def _apply_taxes_template(doc):
     if not tname:
         tname = frappe.db.get_value(master, {"company": doc.company, "disabled": 0,
                                              "is_default": 1})
-    if not tname:
-        return
-    try:
-        from erpnext.controllers.accounts_controller import get_taxes_and_charges
-        doc.taxes_and_charges = tname
-        for row in get_taxes_and_charges(master, tname) or []:
-            doc.append("taxes", row)
-    except Exception:
-        frappe.log_error(frappe.get_traceback(), "midhunatech: taxes template")
+    if tname:
+        _append_taxes(doc, tname)
 
 
 def _apply_party_gstin(doc, gstin):
@@ -1302,7 +1331,8 @@ def _create_party_extras(doc, values):
             frappe.log_error(frappe.get_traceback(), "midhunatech: party contact")
             problems.append(_("mobile number could not be saved"))
 
-    if values.get("_address") or values.get("_city") or values.get("_pincode"):
+    if (values.get("_address") or values.get("_city") or values.get("_pincode")
+            or values.get("_state")):
         try:
             addr = {
                 "doctype": "Address", "address_title": name_label,
@@ -1313,7 +1343,9 @@ def _create_party_extras(doc, values):
                 "is_primary_address": 1, "is_shipping_address": 1,
                 "links": [{"link_doctype": doc.doctype, "link_name": doc.name}],
             }
-            state = _GST_STATES.get(gstin[:2]) if gstin else None
+            # typed state wins; GSTIN state code fills the gap
+            state = (values.get("_state")
+                     or (_GST_STATES.get(gstin[:2]) if gstin else None))
             if state:
                 addr["state"] = state
             if frappe.db.exists("Country", "India"):

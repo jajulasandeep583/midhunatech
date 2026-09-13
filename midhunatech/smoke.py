@@ -102,8 +102,10 @@ def run():
     try:
         cm = get_create_meta("Customer")
         names = [f["fieldname"] for f in cm["fields"]]
-        assert "_gstin" in names and "_mobile" in names and "_address" in names, names
-        ok.append("Customer meta: simple one-form create (mobile/GSTIN/address)")
+        assert {"_gstin", "_mobile", "_address", "_state", "_pincode"} <= set(names), names
+        state_f = next(f for f in cm["fields"] if f["fieldname"] == "_state")
+        assert "Telangana" in state_f["options"], "state options missing"
+        ok.append("Customer meta: one-form create incl. State select + PIN")
     except Exception as e:
         fail.append(f"Customer meta: {e}")
 
@@ -278,6 +280,19 @@ def run():
         si.delete()
         frappe.db.commit()
         ok.append(f"GST auto-applied on B2B invoice (tax {tax} on 100)")
+
+        # explicit template choice wins over auto
+        r2 = create_doc("Sales Invoice", {
+            "customer": customer, "posting_date": nowdate(),
+            "_taxes": "Output GST In-state - S",
+            "items": [{"item_code": item, "qty": 1, "rate": 100}],
+        })
+        si2 = frappe.get_doc("Sales Invoice", r2["name"])
+        assert si2.taxes_and_charges == "Output GST In-state - S", si2.taxes_and_charges
+        assert si2.total_taxes_and_charges > 0
+        si2.delete()
+        frappe.db.commit()
+        ok.append("explicitly selected GST template applied (In-state CGST+SGST)")
     except Exception:
         frappe.db.rollback()
         fail.append(f"GST taxes: {frappe.get_traceback().splitlines()[-1]}")
@@ -359,8 +374,11 @@ def run():
     try:
         pim = get_create_meta("Purchase Invoice")
         names = {f["fieldname"] for f in pim["fields"]}
-        assert {"bill_no", "bill_date"} <= names, names
-        ok.append("Purchase Invoice form: bill_no + bill_date present")
+        assert {"bill_no", "bill_date", "_taxes"} <= names, names
+        sim2 = get_create_meta("Sales Invoice")
+        tf = next((f for f in sim2["fields"] if f["fieldname"] == "_taxes"), None)
+        assert tf and "Output GST" in tf["options"], tf
+        ok.append("Invoice forms: bill_no/bill_date + selectable GST templates")
     except Exception as e:
         fail.append(f"PI bill fields: {e}")
 
