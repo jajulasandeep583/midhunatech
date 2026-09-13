@@ -317,6 +317,28 @@ def run():
         frappe.db.rollback()
         fail.append(f"cancel/amend: {frappe.get_traceback().splitlines()[-1]}")
 
+    # ── delete a throwaway draft from the app ──
+    try:
+        from midhunatech.api.data import delete_doc as _delete_doc
+        r = create_doc("Quotation", {"quotation_to": "Customer",
+                                     "party_name": customer,
+                                     "transaction_date": nowdate(), "items": line})
+        _delete_doc("Quotation", r["name"])
+        assert not frappe.db.exists("Quotation", r["name"])
+        ok.append(f"draft created then deleted from the app ({r['name']})")
+    except Exception:
+        frappe.db.rollback()
+        fail.append(f"delete: {frappe.get_traceback().splitlines()[-1]}")
+
+    # ── PDF generation (wkhtmltopdf + asset host resolution) ──
+    try:
+        target = frappe.db.exists("Sales Invoice", {"docstatus": 1})
+        pdf = frappe.get_print("Sales Invoice", target, as_pdf=True)
+        assert pdf[:4] == b"%PDF", pdf[:20]
+        ok.append(f"PDF generated for {target} ({len(pdf) // 1024} KB)")
+    except Exception:
+        fail.append(f"PDF: {frappe.get_traceback().splitlines()[-1]}")
+
     # ── curated Payments form: Receive from customer via Mode of Payment ──
     try:
         ref = "MT-SMOKE-PAY"

@@ -763,6 +763,8 @@ def get_doc(doctype, name, fields=None):
                                and frappe.has_permission(doctype, "cancel", doc=doc))),
         "can_amend": int(bool(doc.docstatus == 2 and meta.is_submittable
                               and frappe.has_permission(doctype, "create"))),
+        "can_delete": int(bool(doc.docstatus in (0, 2)
+                               and frappe.has_permission(doctype, "delete", doc=doc))),
         "fields": out_fields,
         "tables": _detail_tables(meta, doc, table_spec, doctype),
     }
@@ -1561,6 +1563,18 @@ def record_payment(doctype, name, amount=None, posting_date=None,
     pe.submit()
     frappe.db.commit()
     return {"name": pe.name}
+
+
+@frappe.whitelist()
+def delete_doc(doctype, name):
+    """Delete a draft or cancelled document (submitted ones must be
+    cancelled first — same rule as the desk)."""
+    doc = frappe.get_doc(doctype, name)
+    if doc.docstatus == 1:
+        frappe.throw(_("Cancel the document before deleting it"))
+    frappe.delete_doc(doctype, name)   # enforces delete permission
+    frappe.db.commit()
+    return {"ok": True}
 
 
 @frappe.whitelist()

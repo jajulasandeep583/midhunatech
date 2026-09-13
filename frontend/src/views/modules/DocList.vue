@@ -116,6 +116,10 @@
               </button>
               <button v-if="detail.can_amend" class="dl-act primary" :disabled="acting"
                       @click="doAmend">{{ acting === "amend" ? "Amending…" : "✎ Amend" }}</button>
+              <button v-if="detail.can_delete" class="dl-act danger" :disabled="acting"
+                      @click="doDelete">
+                {{ acting === "delete" ? "Deleting…" : (confirmDelete ? "Tap again to delete" : "🗑 Delete") }}
+              </button>
             </div>
           </div>
 
@@ -212,7 +216,7 @@ import {
   IonButtons, IonContent, IonSpinner, IonToast,
 } from "@ionic/vue";
 import {
-  getView, getList, getDoc, emailDoc, submitDoc, cancelDoc, amendDoc,
+  getView, getList, getDoc, emailDoc, submitDoc, cancelDoc, amendDoc, deleteDoc,
   generateEinvoice, generateEwaybill, getPaymentMeta, recordPayment, badgeClass,
 } from "@/data/docdata.js";
 
@@ -354,6 +358,30 @@ async function doCancel() {
   } catch (e) {
     actErr.value = true;
     actNote.value = e.message || "Could not cancel.";
+  } finally {
+    acting.value = "";
+  }
+}
+
+const confirmDelete = ref(false);
+async function doDelete() {
+  if (!confirmDelete.value) {
+    confirmDelete.value = true;
+    setTimeout(() => { confirmDelete.value = false; }, 4000);
+    return;
+  }
+  confirmDelete.value = false;
+  acting.value = "delete";
+  actNote.value = ""; actErr.value = false;
+  try {
+    const name = detail.value.name;
+    await deleteDoc(props.doctype, name);
+    detail.value = null;               // close the sheet — the doc is gone
+    toast.value = `${name} deleted`;
+    softRefresh();
+  } catch (e) {
+    actErr.value = true;
+    actNote.value = e.message || "Could not delete.";
   } finally {
     acting.value = "";
   }

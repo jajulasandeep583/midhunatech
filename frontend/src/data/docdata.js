@@ -77,6 +77,9 @@ export const cancelDoc = (doctype, name) =>
 export const amendDoc = (doctype, name) =>
   callPost("midhunatech.api.data.amend_doc", { doctype, name });
 
+export const deleteDoc = (doctype, name) =>
+  callPost("midhunatech.api.data.delete_doc", { doctype, name });
+
 export const generateEinvoice = (name) =>
   callPost("midhunatech.api.data.generate_einvoice", { name });
 
