@@ -98,13 +98,13 @@
               {{ detail.status }}
             </span>
             <div v-if="detail.name" class="dl-actions">
-              <button v-if="detail.can_submit" class="dl-act primary" :disabled="acting"
+              <button v-if="detail.can_submit" class="dl-act primary" :disabled="!!acting"
                       @click="doSubmit">{{ acting === "submit" ? "Submitting…" : "✓ Submit" }}</button>
-              <button v-if="detail.can_edit" class="dl-act" :disabled="acting"
+              <button v-if="detail.can_edit" class="dl-act" :disabled="!!acting"
                       @click="startEdit">✏️ Edit</button>
-              <button v-if="detail.can_einvoice" class="dl-act" :disabled="acting"
+              <button v-if="detail.can_einvoice" class="dl-act" :disabled="!!acting"
                       @click="doEinvoice">{{ acting === "einv" ? "Generating…" : "🧾 e-Invoice" }}</button>
-              <button v-if="detail.can_ewaybill" class="dl-act" :disabled="acting"
+              <button v-if="detail.can_ewaybill" class="dl-act" :disabled="!!acting"
                       @click="doEwaybill">{{ acting === "ewb" ? "Generating…" : "🚚 e-Way Bill" }}</button>
               <button v-if="detail.can_pay" class="dl-act" :class="{ on: payOpen }"
                       @click="togglePay">💰 Payment</button>
@@ -112,13 +112,13 @@
               <button v-if="view.can_print" class="dl-act" @click="openPdf">📄 PDF</button>
               <button v-if="view.can_email" class="dl-act" :class="{ on: emailOpen }"
                       @click="emailOpen = !emailOpen">✉️ Email</button>
-              <button v-if="detail.can_cancel" class="dl-act danger" :disabled="acting"
+              <button v-if="detail.can_cancel" class="dl-act danger" :disabled="!!acting"
                       @click="doCancel">
                 {{ acting === "cancel" ? "Cancelling…" : (confirmCancel ? "Tap again to confirm" : "✕ Cancel") }}
               </button>
-              <button v-if="detail.can_amend" class="dl-act primary" :disabled="acting"
+              <button v-if="detail.can_amend" class="dl-act primary" :disabled="!!acting"
                       @click="doAmend">{{ acting === "amend" ? "Amending…" : "✎ Amend" }}</button>
-              <button v-if="detail.can_delete" class="dl-act danger" :disabled="acting"
+              <button v-if="detail.can_delete" class="dl-act danger" :disabled="!!acting"
                       @click="doDelete">
                 {{ acting === "delete" ? "Deleting…" : (confirmDelete ? "Tap again to delete" : "🗑 Delete") }}
               </button>
@@ -142,7 +142,7 @@
             <label class="dl-mini-lbl">Reference no. — cheque / UTR (optional)</label>
             <input v-model="payRef" type="text" class="dl-email-input"
                    placeholder="leave blank to auto-fill" />
-            <button class="dl-email-send" :disabled="!payAmount || acting" @click="doPay">
+            <button class="dl-email-send" :disabled="!payAmount || !!acting" @click="doPay">
               {{ acting === "pay" ? "Recording…"
                  : (!payAmount ? "Enter the amount above first" : "Record Payment") }}
             </button>
