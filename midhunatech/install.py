@@ -67,6 +67,22 @@ def after_migrate():
     except Exception:
         frappe.log_error(frappe.get_traceback(), "midhunatech: ensure_native_modules failed")
 
+    try:
+        drop_checkin_doctype()
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "midhunatech: drop_checkin_doctype failed")
+
+
+def drop_checkin_doctype():
+    """The check-in / attendance feature was removed from the app — erase its
+    DocType and data from any site that still has them. Idempotent."""
+    if frappe.db.exists("DocType", "Midhunatech Checkin"):
+        frappe.delete_doc("DocType", "Midhunatech Checkin", force=True,
+                          ignore_permissions=True, ignore_missing=True)
+        frappe.db.sql_ddl("drop table if exists `tabMidhunatech Checkin`")
+        frappe.db.commit()
+        print("Dropped Midhunatech Checkin doctype + table")
+
 
 def ensure_native_modules():
     """Convert the DEFAULT tiles from the legacy frappe_page (desk iframe) type to

@@ -19,12 +19,6 @@
   ],
   "shortcuts": [
     {
-      "name": "Check in / out",
-      "short_name": "Check in",
-      "url": "/midhunatech/checkin",
-      "icons": [{ "src": "/assets/midhunatech/frontend/icon-192.png", "sizes": "192x192" }]
-    },
-    {
       "name": "Profile",
       "short_name": "Profile",
       "url": "/midhunatech/profile",

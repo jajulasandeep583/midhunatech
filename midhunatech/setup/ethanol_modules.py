@@ -126,9 +126,6 @@ def setup():
     _inject_iframe_chrome()
     cfg = frappe.get_doc("Midhunatech PWA Config")
     cfg.app_name = APP_NAME
-    # webpages-only app: no check-in card / Attendance tab
-    if hasattr(cfg, "show_attendance"):
-        cfg.show_attendance = 0
     for field, value in THEME.items():
         if hasattr(cfg, field):
             cfg.set(field, value)
