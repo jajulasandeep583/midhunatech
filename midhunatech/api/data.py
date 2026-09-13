@@ -976,6 +976,47 @@ def get_create_meta(doctype):
         frappe.throw(_("You are not permitted to create {0}").format(doctype),
                      frappe.PermissionError)
 
+    if doctype == "Payment Entry":
+        # Curated MSME payment form — the raw doctype (paid_from account
+        # pickers over the whole CoA) is desk territory.
+        modes = frappe.get_all("Mode of Payment", filters={"enabled": 1}, pluck="name")
+        fields = [
+            {"fieldname": "payment_type", "label": _("Payment Type"), "fieldtype": "Select",
+             "options": "Receive\nPay", "reqd": 1, "default": "Receive"},
+            {"fieldname": "_customer", "label": _("Customer (when receiving)"),
+             "fieldtype": "Link", "options": "Customer", "reqd": 0, "default": ""},
+            {"fieldname": "_supplier", "label": _("Supplier (when paying)"),
+             "fieldtype": "Link", "options": "Supplier", "reqd": 0, "default": ""},
+            {"fieldname": "amount", "label": _("Amount"), "fieldtype": "Currency",
+             "reqd": 1, "default": ""},
+            {"fieldname": "posting_date", "label": _("Date"), "fieldtype": "Date",
+             "reqd": 1, "default": nowdate()},
+            {"fieldname": "_mode", "label": _("Mode of Payment"), "fieldtype": "Select",
+             "options": "\n".join(modes), "reqd": 0,
+             "default": (modes[0] if modes else "")},
+            {"fieldname": "reference_no", "label": _("Reference No (UTR / cheque)"),
+             "fieldtype": "Data", "reqd": 0, "default": ""},
+        ]
+        return {"creatable": True, "doctype": doctype, "fields": fields, "child": None,
+                "submittable": int(bool(frappe.has_permission(doctype, "submit")))}
+
+    if doctype == "Journal Entry":
+        # Simple two-sided posting: debit one account, credit another.
+        fields = [
+            {"fieldname": "_debit_account", "label": _("Debit — expense / where money went"),
+             "fieldtype": "Link", "options": "Account", "reqd": 1, "default": ""},
+            {"fieldname": "_credit_account", "label": _("Credit — paid from (bank / cash)"),
+             "fieldtype": "Link", "options": "Account", "reqd": 1, "default": ""},
+            {"fieldname": "amount", "label": _("Amount"), "fieldtype": "Currency",
+             "reqd": 1, "default": ""},
+            {"fieldname": "posting_date", "label": _("Date"), "fieldtype": "Date",
+             "reqd": 1, "default": nowdate()},
+            {"fieldname": "user_remark", "label": _("Remark (e.g. bank charges)"),
+             "fieldtype": "Small Text", "reqd": 0, "default": ""},
+        ]
+        return {"creatable": True, "doctype": doctype, "fields": fields, "child": None,
+                "submittable": int(bool(frappe.has_permission(doctype, "submit")))}
+
     if doctype in _PARTY_FORM:
         name_field = _PARTY_FORM[doctype]
         fields = [{"fieldname": name_field, "label": _("Name"), "fieldtype": "Data",
@@ -1037,9 +1078,12 @@ def search_link(doctype, txt="", page_length=10):
         or_filters = [["name", "like", s]]
         if title != "name":
             or_filters.append([title, "like", s])
+    # only pickable records: ledger accounts, not group nodes
+    filters = {"is_group": 0} if meta.has_field("is_group") else None
     wanted = ["name"] + ([title] if title != "name" else [])
-    rows = frappe.get_list(doctype, or_filters=or_filters, fields=wanted,
-                           page_length=int(page_length), order_by="modified desc")
+    rows = frappe.get_list(doctype, filters=filters, or_filters=or_filters,
+                           fields=wanted, page_length=int(page_length),
+                           order_by="modified desc")
     return [{"value": r.get("name"), "label": str(r.get(title) or r.get("name"))}
             for r in rows]
 
@@ -1055,6 +1099,11 @@ def create_doc(doctype, values, submit=0):
     if not frappe.has_permission(doctype, "create"):
         frappe.throw(_("You are not permitted to create {0}").format(doctype),
                      frappe.PermissionError)
+
+    if doctype == "Payment Entry":
+        return _create_party_payment(values or {}, submit)
+    if doctype == "Journal Entry":
+        return _create_simple_je(values or {}, submit)
     meta = frappe.get_meta(doctype)
     # Only accept fields the user is allowed to write (respects permlevel) — so a
     # crafted request can't set restricted fields the form never exposed.
@@ -1194,6 +1243,126 @@ def _einvoice_available(doc):
         return 0
 
 
+def _mode_account(mode, company):
+    """The Mode of Payment's default account for this company."""
+    if not mode:
+        return None
+    return frappe.db.get_value("Mode of Payment Account",
+                               {"parent": mode, "company": company},
+                               "default_account")
+
+
+def _create_party_payment(values, submit=0):
+    """The curated Payments '+' form → a properly-booked Payment Entry:
+    party receivable/payable account on one side, the Mode of Payment's
+    cash/bank account on the other, auto-allocated against the party's
+    outstanding invoices oldest-first. Unallocated remainder = advance."""
+    from frappe.utils import cint, flt
+
+    ptype = values.get("payment_type") or "Receive"
+    party_type = "Customer" if ptype == "Receive" else "Supplier"
+    party = values.get("_customer") if party_type == "Customer" else values.get("_supplier")
+    if not party:
+        frappe.throw(_("Select the {0} for this {1} payment").format(
+            _(party_type), _(ptype)))
+    amount = flt(values.get("amount"))
+    if amount <= 0:
+        frappe.throw(_("Enter the payment amount"))
+
+    company = (frappe.defaults.get_user_default("Company")
+               or frappe.db.get_single_value("Global Defaults", "default_company"))
+    from erpnext.accounts.party import get_party_account
+    party_account = get_party_account(party_type, party, company)
+
+    mode = values.get("_mode")
+    bank_account = _mode_account(mode, company)
+    if not bank_account:
+        from erpnext.accounts.utils import get_default_bank_cash_account
+        acc = (get_default_bank_cash_account(company, "Cash")
+               or get_default_bank_cash_account(company, "Bank"))
+        bank_account = acc and acc.get("account")
+    if not bank_account:
+        frappe.throw(_("No cash/bank account found — set a default account on "
+                       "the Mode of Payment"))
+
+    pe = frappe.new_doc("Payment Entry")
+    pe.payment_type = ptype
+    pe.company = company
+    pe.posting_date = values.get("posting_date") or nowdate()
+    pe.mode_of_payment = mode
+    pe.party_type = party_type
+    pe.party = party
+    if ptype == "Receive":
+        pe.paid_from, pe.paid_to = party_account, bank_account
+    else:
+        pe.paid_from, pe.paid_to = bank_account, party_account
+    pe.paid_amount = amount
+    pe.received_amount = amount
+    pe.source_exchange_rate = 1
+    pe.target_exchange_rate = 1
+
+    # allocate against outstanding invoices, oldest first
+    try:
+        from erpnext.accounts.utils import get_outstanding_invoices
+        outstanding = get_outstanding_invoices(party_type, party, [party_account])
+        remaining = amount
+        for inv in sorted(outstanding, key=lambda d: d.get("posting_date") or ""):
+            if remaining <= 0:
+                break
+            due = flt(inv.get("outstanding_amount"))
+            if due <= 0:
+                continue
+            alloc = min(remaining, due)
+            pe.append("references", {
+                "reference_doctype": inv.get("voucher_type"),
+                "reference_name":   inv.get("voucher_no"),
+                "total_amount":     inv.get("invoice_amount"),
+                "outstanding_amount": due,
+                "allocated_amount": alloc,
+            })
+            remaining -= alloc
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "midhunatech: payment allocation")
+
+    pe.reference_no = values.get("reference_no") or f"{party} {pe.posting_date}"
+    pe.reference_date = pe.posting_date
+    pe.insert()
+    if cint(submit):
+        pe.submit()
+    frappe.db.commit()
+    return {"name": pe.name, "docstatus": pe.docstatus}
+
+
+def _create_simple_je(values, submit=0):
+    """The simple Journal Entry form: debit one account, credit another,
+    one amount — bank charges, office expenses, corrections."""
+    from frappe.utils import cint, flt
+
+    debit_acc = values.get("_debit_account")
+    credit_acc = values.get("_credit_account")
+    amount = flt(values.get("amount"))
+    if not debit_acc or not credit_acc:
+        frappe.throw(_("Pick both accounts — debit and credit"))
+    if debit_acc == credit_acc:
+        frappe.throw(_("Debit and credit accounts must be different"))
+    if amount <= 0:
+        frappe.throw(_("Enter the amount"))
+
+    je = frappe.new_doc("Journal Entry")
+    je.voucher_type = "Journal Entry"
+    je.company = (frappe.defaults.get_user_default("Company")
+                  or frappe.db.get_single_value("Global Defaults", "default_company"))
+    je.posting_date = values.get("posting_date") or nowdate()
+    je.user_remark = values.get("user_remark") or ""
+    je.append("accounts", {"account": debit_acc, "debit_in_account_currency": amount})
+    je.append("accounts", {"account": credit_acc, "credit_in_account_currency": amount})
+    je.insert()
+    if cint(submit):
+        je.submit()
+    frappe.db.commit()
+    return {"name": je.name, "docstatus": je.docstatus}
+
+
 def _can_pay(doc):
     """1 when the Record-Payment button should show: a submitted Sales /
     Purchase Invoice with outstanding amount, user allowed to make payments."""
@@ -1241,18 +1410,12 @@ def record_payment(doctype, name, amount=None, posting_date=None,
             ref.allocated_amount = amount
     if mode_of_payment:
         pe.mode_of_payment = mode_of_payment
-        try:
-            from erpnext.accounts.doctype.payment_entry.payment_entry import (
-                get_bank_cash_account,
-            )
-            acc = get_bank_cash_account(pe.mode_of_payment, pe.company)
-            if acc and acc.get("account"):
-                if pe.payment_type == "Receive":
-                    pe.paid_to = acc["account"]
-                else:
-                    pe.paid_from = acc["account"]
-        except Exception:
-            pass  # keep the default account from get_payment_entry
+        acc = _mode_account(mode_of_payment, pe.company)
+        if acc:
+            if pe.payment_type == "Receive":
+                pe.paid_to = acc
+            else:
+                pe.paid_from = acc
     # Bank transactions need a reference — default to the invoice number so
     # one-tap payment works; a typed UTR / cheque no. wins.
     pe.reference_no = reference_no or pe.reference_no or name

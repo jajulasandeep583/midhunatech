@@ -265,6 +265,28 @@ def run():
         frappe.db.rollback()
         fail.append(f"record_payment: {frappe.get_traceback().splitlines()[-1]}")
 
+    # ── curated Payments form: Receive from customer via Mode of Payment ──
+    try:
+        ref = "MT-SMOKE-PAY"
+        if frappe.db.exists("Payment Entry", {"reference_no": ref}):
+            ok.append("Payments form: entry already exists")
+        else:
+            cm = get_create_meta("Payment Entry")
+            names = [f["fieldname"] for f in cm["fields"]]
+            assert "_mode" in names and "_customer" in names, names
+            modes = frappe.get_all("Mode of Payment", filters={"enabled": 1},
+                                   pluck="name")
+            r = create_doc("Payment Entry", {
+                "payment_type": "Receive", "_customer": customer, "amount": 10,
+                "posting_date": nowdate(), "_mode": modes[0] if modes else "",
+                "reference_no": ref,
+            }, submit=1)
+            assert r["docstatus"] == 1, r
+            ok.append(f"Payments form: {r['name']} booked + submitted via Mode of Payment")
+    except Exception:
+        frappe.db.rollback()
+        fail.append(f"Payments form: {frappe.get_traceback().splitlines()[-1]}")
+
     # ── journal entry (expense posting) from the app ──
     try:
         je_exists = frappe.db.exists("Journal Entry",
@@ -275,13 +297,11 @@ def run():
             cash = frappe.get_all("Account", filters={"account_type": "Cash",
                                   "is_group": 0}, limit_page_length=1, pluck="name")[0]
             r = create_doc("Journal Entry", {
+                "_debit_account": expense, "_credit_account": cash, "amount": 25,
                 "posting_date": nowdate(), "user_remark": "MT smoke expense",
-                "accounts": [
-                    {"account": expense, "debit_in_account_currency": 25},
-                    {"account": cash, "credit_in_account_currency": 25},
-                ],
-            })
-            ok.append(f"created Journal Entry {r['name']} (expense posting)")
+            }, submit=1)
+            assert r["docstatus"] == 1, r
+            ok.append(f"created + submitted Journal Entry {r['name']} (simple 2-account form)")
         else:
             ok.append(f"Journal Entry draft already exists ({je_exists})")
     except Exception as e:
