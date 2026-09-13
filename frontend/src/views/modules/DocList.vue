@@ -238,6 +238,9 @@ const toast = ref("");
 async function onCreated(name) {
   toast.value = `Created ${name}`;
   await reload();
+  // open the new record straight away — Submit / Print / Payment are right
+  // there instead of the user hunting for the draft in the list
+  open({ name, title: name });
 }
 
 async function reload() {
