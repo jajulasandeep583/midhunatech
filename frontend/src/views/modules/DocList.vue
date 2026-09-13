@@ -144,7 +144,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from "vue";
+import { ref, reactive, onMounted, onUnmounted } from "vue";
 import {
   IonSearchbar, IonSkeletonText, IonButton, IonInfiniteScroll,
   IonInfiniteScrollContent, IonModal, IonHeader, IonToolbar, IonTitle,
@@ -245,10 +245,41 @@ async function open(row) {
   }
 }
 
-// expose reload for parent pull-to-refresh
-defineExpose({ reload });
+// Silent background refresh — same data as reload() but without the
+// skeleton flash. Used when the user navigates back to this list or the
+// PWA is resumed, so the screen is always current without feeling laggy.
+let softBusy = false;
+async function softRefresh() {
+  if (softBusy || loading.value) return;
+  softBusy = true;
+  try {
+    const [v, l] = await Promise.all([
+      getView(props.doctype, props.label, props.fields, props.filters),
+      getList(props.doctype, { search: search.value, start: 0, page_length: 20,
+                               fields: props.fields, filters: props.filters }),
+    ]);
+    Object.assign(view, v);
+    rows.value = l.rows;
+    hasMore.value = l.has_more;
+    start = l.rows.length;
+    error.value = null;
+  } catch { /* keep what's on screen */ } finally {
+    softBusy = false;
+  }
+}
 
-onMounted(reload);
+function onVisibility() {
+  if (document.visibilityState === "visible") softRefresh();
+}
+
+// expose reload for parent pull-to-refresh, softRefresh for view re-entry
+defineExpose({ reload, softRefresh });
+
+onMounted(() => {
+  reload();
+  document.addEventListener("visibilitychange", onVisibility);
+});
+onUnmounted(() => document.removeEventListener("visibilitychange", onVisibility));
 </script>
 
 <style scoped>

@@ -150,7 +150,7 @@ import { useRoute } from "vue-router";
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonContent,
   IonButtons, IonBackButton, IonButton, IonIcon, IonSpinner,
-  IonRefresher, IonRefresherContent,
+  IonRefresher, IonRefresherContent, onIonViewWillEnter,
 } from "@ionic/vue";
 import { openOutline, chevronBackOutline } from "ionicons/icons";
 import { appConfig } from "@/data/session.js";
@@ -165,6 +165,10 @@ const docListRef  = ref(null);
 async function onDocRefresh(e) {
   try { await docListRef.value?.reload(); } finally { e.target.complete(); }
 }
+
+// Ionic caches pages: coming back to a list re-enters the same instance.
+// Silently refresh so the data is never stale (no skeleton flash).
+onIonViewWillEnter(() => { docListRef.value?.softRefresh?.(); });
 
 const slug = computed(() => decodeURIComponent(route.params.slug || ""));
 

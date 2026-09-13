@@ -8,23 +8,19 @@ import frappe
 # Only seeded if the target Doctype exists on the site (skips HRMS/ERPNext
 # doctypes that aren't installed).
 NATIVE_MODULES = [
-    ("Sales Order",      "sales_order",      "dollar",       "#22c55e", "/sales_order",      "Sales Order"),
-    ("Stock Entry",      "stock_entry",      "box",          "#f59e0b", "/stock_entry",      "Stock Entry"),
-    ("Material Request", "material_request", "box",          "#0ea5e9", "/material_request", "Material Request"),
-    ("Attendance",       "attendance",       "clock",        "#3b82f6", "/attendance",       "Attendance"),
-    ("Leave Request",    "leave_request",    "calendar",     "#ec4899", "/leave_request",    "Leave Application"),
-    ("Expense Claim",    "expense_claim",    "report",       "#8b5cf6", "/expense_claim",    "Expense Claim"),
-    ("My Tasks",         "my_tasks",         "check-circle", "#10b981", "/my_tasks",         "Task"),
-    ("Team",             "team",             "users",        "#f97316", "/team",             "Employee"),
+    ("Items",            "items",            "box",       "#f59e0b", "/items",            "Item"),
+    ("Customers",        "customers",        "users",     "#0ea5e9", "/customers",        "Customer"),
+    ("Quotation",        "quotation",        "file",      "#6366f1", "/quotation",        "Quotation"),
+    ("Sales Order",      "sales_order",      "clipboard", "#22c55e", "/sales_order",      "Sales Order"),
+    ("Sales Invoice",    "sales_invoice",    "dollar",    "#10b981", "/sales_invoice",    "Sales Invoice"),
+    ("Purchase Invoice", "purchase_invoice", "🧾",        "#8b5cf6", "/purchase_invoice", "Purchase Invoice"),
+    ("Expense Claim",    "expense_claim",    "💸",        "#ec4899", "/expense_claim",    "Expense Claim"),
 ]
 
 # Report tiles seeded on install — only if the Report exists (i.e. ERPNext
 # is installed). They get the mobile KPI cards / chart / filter bar for free.
 # (label, module_name, icon, report_name)
 REPORT_MODULES = [
-    ("Balance Sheet",  "balance_sheet",   "📊", "Balance Sheet"),
-    ("Profit & Loss",  "pl_statement",    "📈", "Profit and Loss Statement"),
-    ("Trial Balance",  "trial_balance",   "⚖️", "Trial Balance"),
     ("General Ledger", "general_ledger",  "📒", "General Ledger"),
     ("Stock Balance",  "stock_balance",   "📦", "Stock Balance"),
 ]
@@ -47,12 +43,6 @@ def after_install():
         seed_default_notifications()
     except Exception:
         frappe.log_error(frappe.get_traceback(), "midhunatech: seed_default_notifications failed")
-
-    try:
-        from midhunatech.setup.web_pages import create_pages
-        create_pages()  # creates About/Notices web pages + links them as modules
-    except Exception:
-        frappe.log_error(frappe.get_traceback(), "midhunatech: create_pages failed")
 
     frappe.msgprint(
         "Midhunatech PWA installed and configured. Open /midhunatech on your phone, "
@@ -110,6 +100,9 @@ def seed_default_modules():
         cfg.app_name      = "Midhunatech ERP"
         cfg.theme_color   = "#6366f1"
         cfg.primary_color = "#6366f1"
+        # Business app for MSMEs — no HR check-in card / Attendance tab
+        if hasattr(cfg, "show_attendance"):
+            cfg.show_attendance = 0
 
     existing = {r.module_name for r in cfg.get("modules", [])}
     order = max([int(r.display_order or 0) for r in cfg.get("modules", [])] or [0])
@@ -196,10 +189,10 @@ def seed_default_modules():
 # Default KPI cards (Count) seeded on install — guarded by doctype existence.
 # (label, document_type, color)
 DEFAULT_CARDS = [
-    ("MT Total Sales Orders", "Sales Order", "#6366f1"),
-    ("MT Employees",          "Employee",    "#f97316"),
-    ("MT Open Tasks",         "Task",        "#10b981"),
-    ("MT Stock Entries",      "Stock Entry", "#f59e0b"),
+    ("MT Quotations",        "Quotation",        "#6366f1"),
+    ("MT Sales Orders",      "Sales Order",      "#22c55e"),
+    ("MT Sales Invoices",    "Sales Invoice",    "#10b981"),
+    ("MT Purchase Invoices", "Purchase Invoice", "#8b5cf6"),
 ]
 
 

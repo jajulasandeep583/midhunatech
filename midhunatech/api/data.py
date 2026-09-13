@@ -142,6 +142,11 @@ _DEFAULT_FIELDS = {
     "Payment Entry":    ["payment_type", "party_type", "party", "posting_date", "paid_amount", "status"],
     "Journal Entry":    ["voucher_type", "posting_date", "total_debit", "user_remark"],
     "Material Request": ["material_request_type", "transaction_date", "schedule_date", "status"],
+    "Quotation":        ["party_name", "transaction_date", "valid_till", "grand_total", "status"],
+    "Item":             ["item_group", "stock_uom", "standard_rate", "disabled"],
+    "Customer":         ["customer_group", "territory", "mobile_no", "customer_type"],
+    "Supplier":         ["supplier_group", "country", "mobile_no", "supplier_type"],
+    "Expense Claim":    ["employee_name", "posting_date", "total_claimed_amount", "total_sanctioned_amount", "status"],
 }
 
 
@@ -383,6 +388,42 @@ _CHILD_CREATE = {
         "parent_reqd": {"schedule_date"},
         "copy_parent": {"schedule_date": "schedule_date"},
     },
+    # Sales cycle — rate left optional: blank rate falls back to the price
+    # list via set_missing_values, a typed rate wins.
+    "Quotation": {
+        "table": "items",
+        "fields": ["item_code", "qty", "rate"],
+        "reqd": {"item_code", "qty"},
+    },
+    "Sales Order": {
+        "table": "items",
+        "fields": ["item_code", "qty", "rate"],
+        "reqd": {"item_code", "qty"},
+        "parent_reqd": {"delivery_date"},
+        "copy_parent": {"delivery_date": "delivery_date"},
+    },
+    "Sales Invoice": {
+        "table": "items",
+        "fields": ["item_code", "qty", "rate"],
+        "reqd": {"item_code", "qty"},
+    },
+    "Purchase Invoice": {
+        "table": "items",
+        "fields": ["item_code", "qty", "rate"],
+        "reqd": {"item_code", "qty"},
+    },
+    "Purchase Order": {
+        "table": "items",
+        "fields": ["item_code", "qty", "rate"],
+        "reqd": {"item_code", "qty"},
+        "parent_reqd": {"schedule_date"},
+        "copy_parent": {"schedule_date": "schedule_date"},
+    },
+    "Expense Claim": {
+        "table": "expenses",
+        "fields": ["expense_type", "expense_date", "amount", "description"],
+        "reqd": {"expense_type", "expense_date", "amount"},
+    },
 }
 
 
@@ -582,9 +623,24 @@ def _create_fields(meta, perm, cap=12):
     def add(df):
         if df.fieldname in seen or df.fieldname in _SKIP:
             return
-        if df.fieldtype not in _CREATE_TYPES or df.fieldtype == "Read Only":
-            return
         if df.hidden or df.read_only or df.fieldname not in perm:
+            return
+        # Dynamic Link (e.g. Quotation.party_name) → plain Link to the
+        # controlling field's default doctype, so the mobile form gets a
+        # real picker instead of dropping the field.
+        if df.fieldtype == "Dynamic Link":
+            ctrl = meta.get_field(df.options or "")
+            target = (ctrl.default or "") if ctrl else ""
+            if not target or not frappe.db.exists("DocType", target):
+                return
+            seen.add(df.fieldname)
+            fields.append({
+                "fieldname": df.fieldname, "label": df.label or df.fieldname,
+                "fieldtype": "Link", "options": target,
+                "reqd": 1 if (df.reqd or (ctrl and ctrl.reqd)) else 0, "default": "",
+            })
+            return
+        if df.fieldtype not in _CREATE_TYPES or df.fieldtype == "Read Only":
             return
         seen.add(df.fieldname)
         default = df.default or ""
@@ -605,6 +661,12 @@ def _create_fields(meta, perm, cap=12):
     for df in meta.fields:          # mandatory fields first
         if df.reqd:
             add(df)
+        elif df.fieldtype == "Dynamic Link":
+            # party fields (Quotation.party_name) whose controller is
+            # mandatory count as mandatory themselves
+            ctrl = meta.get_field(df.options or "")
+            if ctrl is not None and ctrl.reqd:
+                add(df)
     for df in meta.fields:          # then a few common optional ones
         if len(fields) >= cap:
             break
