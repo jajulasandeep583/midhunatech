@@ -52,6 +52,13 @@ export const getDashboard = (target) =>
 export const getCreateMeta = (doctype) =>
   call("midhunatech.api.data.get_create_meta", { doctype });
 
+export const getEditMeta = (doctype, name) =>
+  call("midhunatech.api.data.get_edit_meta", { doctype, name });
+
+export const updateDoc = (doctype, name, values, submit = 0) =>
+  callPost("midhunatech.api.data.update_doc",
+    { doctype, name, values: JSON.stringify(values), submit: submit ? 1 : 0 });
+
 export const searchLink = (doctype, txt) =>
   call("midhunatech.api.data.search_link", { doctype, txt });
 

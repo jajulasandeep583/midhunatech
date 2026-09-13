@@ -317,18 +317,27 @@ def run():
         frappe.db.rollback()
         fail.append(f"cancel/amend: {frappe.get_traceback().splitlines()[-1]}")
 
-    # ── delete a throwaway draft from the app ──
+    # ── edit + delete a throwaway draft from the app ──
     try:
-        from midhunatech.api.data import delete_doc as _delete_doc
+        from midhunatech.api.data import (get_edit_meta, update_doc,
+                                          delete_doc as _delete_doc)
         r = create_doc("Quotation", {"quotation_to": "Customer",
                                      "party_name": customer,
                                      "transaction_date": nowdate(), "items": line})
+        em = get_edit_meta("Quotation", r["name"])
+        assert em["child_rows"] and em["child_rows"][0]["item_code"] == item, em["child_rows"]
+        u = update_doc("Quotation", r["name"], {
+            "items": [{"item_code": item, "qty": 5, "rate": 200}],
+        })
+        q = frappe.get_doc("Quotation", u["name"])
+        assert q.items[0].qty == 5 and q.net_total == 1000, (q.items[0].qty, q.net_total)
+        ok.append(f"draft edited from the app (qty→5, net 1000) ({r['name']})")
         _delete_doc("Quotation", r["name"])
         assert not frappe.db.exists("Quotation", r["name"])
-        ok.append(f"draft created then deleted from the app ({r['name']})")
+        ok.append(f"draft deleted from the app ({r['name']})")
     except Exception:
         frappe.db.rollback()
-        fail.append(f"delete: {frappe.get_traceback().splitlines()[-1]}")
+        fail.append(f"edit/delete: {frappe.get_traceback().splitlines()[-1]}")
 
     # ── PDF generation (wkhtmltopdf + asset host resolution) ──
     try:

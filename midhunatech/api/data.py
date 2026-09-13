@@ -765,6 +765,10 @@ def get_doc(doctype, name, fields=None):
                               and frappe.has_permission(doctype, "create"))),
         "can_delete": int(bool(doc.docstatus in (0, 2)
                                and frappe.has_permission(doctype, "delete", doc=doc))),
+        "can_edit": int(bool(doc.docstatus == 0
+                             and doctype not in _PARTY_FORM
+                             and doctype not in ("Payment Entry", "Journal Entry")
+                             and frappe.has_permission(doctype, "write", doc=doc))),
         "fields": out_fields,
         "tables": _detail_tables(meta, doc, table_spec, doctype),
     }
@@ -1563,6 +1567,95 @@ def record_payment(doctype, name, amount=None, posting_date=None,
     pe.submit()
     frappe.db.commit()
     return {"name": pe.name}
+
+
+@frappe.whitelist()
+def get_edit_meta(doctype, name):
+    """The create form's field list pre-filled with a draft's current
+    values (child rows included) — powers Edit on drafts."""
+    doc = frappe.get_doc(doctype, name)
+    doc.check_permission("write")
+    if doc.docstatus != 0:
+        frappe.throw(_("Only draft documents can be edited"))
+    if doctype in _PARTY_FORM or doctype in ("Payment Entry", "Journal Entry"):
+        frappe.throw(_("This document type cannot be edited here"))
+
+    info = get_create_meta(doctype)
+    if not info.get("creatable"):
+        frappe.throw(info.get("reason") or _("Not editable"))
+    for f in info["fields"]:
+        fn = f["fieldname"]
+        if fn == "_taxes":
+            f["default"] = doc.get("taxes_and_charges") or ""
+        elif not fn.startswith("_"):
+            v = doc.get(fn)
+            f["default"] = "" if v is None else v
+    rows = []
+    if info.get("child"):
+        cfields = [cf["fieldname"] for cf in info["child"]["fields"]]
+        for row in doc.get(info["child"]["fieldname"]) or []:
+            rows.append({fn: ("" if row.get(fn) is None else row.get(fn))
+                         for fn in cfields})
+    info["name"] = name
+    info["child_rows"] = rows
+    return info
+
+
+@frappe.whitelist()
+def update_doc(doctype, name, values, submit=0):
+    """Save changes to a draft from the edit form (same field filtering as
+    create); submit=1 also submits it."""
+    from frappe.utils import cint
+    if isinstance(values, str):
+        values = frappe.parse_json(values)
+    values = values or {}
+    doc = frappe.get_doc(doctype, name)
+    doc.check_permission("write")
+    if doc.docstatus != 0:
+        frappe.throw(_("Only draft documents can be edited"))
+    if doctype in _PARTY_FORM or doctype in ("Payment Entry", "Journal Entry"):
+        frappe.throw(_("This document type cannot be edited here"))
+
+    meta = frappe.get_meta(doctype)
+    writable = _permitted_fields(meta, "write")
+    skip = _SKIP | {"owner", "creation", "modified", "modified_by", "docstatus"}
+    spec = _CHILD_CREATE.get(doctype)
+    child_field = spec["table"] if spec else None
+
+    for key, val in values.items():
+        if key == child_field or key.startswith("_"):
+            continue
+        if key in writable and key not in skip:
+            doc.set(key, val if val not in (None, "") else None)
+
+    # taxes template re-selection (blank keeps whatever the doc has)
+    sel = values.get("_taxes")
+    if sel and doctype in _TAXABLE_DOCTYPES and meta.has_field("taxes_and_charges") \
+            and sel != (doc.get("taxes_and_charges") or ""):
+        doc.set("taxes", [])
+        _append_taxes(doc, sel)
+
+    rows = values.get(child_field) if child_field else None
+    if child_field and isinstance(rows, list):
+        cmeta = frappe.get_meta(meta.get_field(child_field).options)
+        cwritable = _permitted_fields(cmeta, "write")
+        doc.set(child_field, [])
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            clean = {k: v for k, v in row.items()
+                     if k in cwritable and k not in skip and v not in (None, "")}
+            for ck, pk in (spec.get("copy_parent") or {}).items():
+                if not clean.get(ck) and values.get(pk):
+                    clean[ck] = values[pk]
+            if clean:
+                doc.append(child_field, clean)
+
+    doc.save()
+    if cint(submit):
+        doc.submit()
+    frappe.db.commit()
+    return {"name": doc.name, "docstatus": doc.docstatus}
 
 
 @frappe.whitelist()

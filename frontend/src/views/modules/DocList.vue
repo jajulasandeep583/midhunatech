@@ -100,6 +100,8 @@
             <div v-if="detail.name" class="dl-actions">
               <button v-if="detail.can_submit" class="dl-act primary" :disabled="acting"
                       @click="doSubmit">{{ acting === "submit" ? "Submitting…" : "✓ Submit" }}</button>
+              <button v-if="detail.can_edit" class="dl-act" :disabled="acting"
+                      @click="startEdit">✏️ Edit</button>
               <button v-if="detail.can_einvoice" class="dl-act" :disabled="acting"
                       @click="doEinvoice">{{ acting === "einv" ? "Generating…" : "🧾 e-Invoice" }}</button>
               <button v-if="detail.can_ewaybill" class="dl-act" :disabled="acting"
@@ -191,13 +193,15 @@
     </ion-modal>
 
     <!-- ── Floating "+" create button ── -->
-    <button v-if="view.can_create" class="dl-fab" :aria-label="`New ${view.label}`" @click="showForm = true">+</button>
+    <button v-if="view.can_create" class="dl-fab" :aria-label="`New ${view.label}`"
+            @click="editName = ''; showForm = true">+</button>
 
-    <!-- ── Create form ── -->
+    <!-- ── Create / edit form ── -->
     <DocForm
       :open="showForm"
       :doctype="props.doctype"
       :label="view.label || props.label"
+      :name="editName"
       @close="showForm = false"
       @created="onCreated"
     />
@@ -243,7 +247,14 @@ let start = 0;
 const detail = ref(null);
 const detailLoading = ref(false);
 const showForm = ref(false);
+const editName = ref("");
 const toast = ref("");
+
+function startEdit() {
+  editName.value = detail.value.name;
+  detail.value = null;      // close the sheet; the edit form takes over
+  showForm.value = true;
+}
 
 async function onCreated(name) {
   toast.value = `Created ${name}`;

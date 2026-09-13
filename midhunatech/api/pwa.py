@@ -202,3 +202,10 @@ def change_password(old_password, new_password):
     _update_password(user, new_password)
     frappe.db.commit()
     return {"ok": True}
+
+
+@frappe.whitelist()
+def get_csrf():
+    """Fresh CSRF token for the logged-in session — lets a long-open PWA
+    tab recover from a stale token without reloading the page."""
+    return {"csrf_token": frappe.sessions.get_csrf_token()}

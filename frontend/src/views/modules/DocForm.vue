@@ -4,7 +4,7 @@
   <ion-modal :is-open="open" @didDismiss="$emit('close')">
     <ion-header>
       <ion-toolbar>
-        <ion-title class="df-title">New {{ doctype }}</ion-title>
+        <ion-title class="df-title">{{ name ? `Edit ${name}` : `New ${doctype}` }}</ion-title>
         <ion-buttons slot="end">
           <ion-button @click="$emit('close')">Cancel</ion-button>
         </ion-buttons>
@@ -106,12 +106,13 @@
              draft escape hatch is a small link so nobody taps it by habit -->
         <button v-if="submittable" class="df-draft-link" :disabled="!canSubmit || !!saving"
                 @click="submit(false)">
-          {{ saving === "draft" ? "Saving draft…" : "save as draft instead" }}
+          {{ saving === "draft" ? "Saving…" : (name ? "save changes, keep as draft" : "save as draft instead") }}
         </button>
         <button class="df-submit" :disabled="!canSubmit || !!saving"
                 @click="submit(submittable)">
           <ion-spinner v-if="saving" name="crescent" style="width:18px;height:18px;" />
-          <span v-else>{{ submittable ? "✓ Create & Submit" : `Create ${doctype}` }}</span>
+          <span v-else>{{ submittable ? (name ? "✓ Save & Submit" : "✓ Create & Submit")
+                          : (name ? "Save Changes" : `Create ${doctype}`) }}</span>
         </button>
       </template>
     </ion-content>
@@ -124,12 +125,15 @@ import {
   IonModal, IonHeader, IonToolbar, IonTitle, IonButtons, IonButton,
   IonContent, IonSpinner, IonToggle,
 } from "@ionic/vue";
-import { getCreateMeta, searchLink, createDoc } from "@/data/docdata.js";
+import {
+  getCreateMeta, getEditMeta, searchLink, createDoc, updateDoc,
+} from "@/data/docdata.js";
 
 const props = defineProps({
   open:    { type: Boolean, default: false },
   doctype: { type: String, required: true },
   label:   { type: String, default: "" },
+  name:    { type: String, default: "" },   // set = edit this draft
 });
 const emit = defineEmits(["close", "created"]);
 
@@ -161,16 +165,20 @@ watch(() => props.open, async (isOpen) => {
   Object.keys(form).forEach(k => delete form[k]);
   loading.value = true;
   try {
-    const meta = await getCreateMeta(props.doctype);
+    const meta = props.name
+      ? await getEditMeta(props.doctype, props.name)
+      : await getCreateMeta(props.doctype);
     if (!meta.creatable) { notCreatable.value = meta.reason; return; }
     fields.value = meta.fields;
     submittable.value = !!meta.submittable;
     for (const f of meta.fields) {
-      form[f.fieldname] = f.fieldtype === "Check" ? (Number(f.default) ? 1 : 0) : (f.default || "");
+      form[f.fieldname] = f.fieldtype === "Check" ? (Number(f.default) ? 1 : 0) : (f.default ?? "");
     }
     if (meta.child) {
       child.value = meta.child;
-      rows.value = [emptyRow()];
+      rows.value = (meta.child_rows && meta.child_rows.length)
+        ? meta.child_rows.map((r) => ({ ...r }))
+        : [emptyRow()];
     }
   } catch (e) {
     notCreatable.value = e.message;
@@ -226,11 +234,13 @@ async function submit(alsoSubmit = false) {
   try {
     const payload = { ...form };
     if (child.value) payload[child.value.fieldname] = rows.value.map(r => ({ ...r }));
-    const res = await createDoc(props.doctype, payload, alsoSubmit ? 1 : 0);
+    const res = props.name
+      ? await updateDoc(props.doctype, props.name, payload, alsoSubmit ? 1 : 0)
+      : await createDoc(props.doctype, payload, alsoSubmit ? 1 : 0);
     emit("created", res.name);
     emit("close");
   } catch (e) {
-    error.value = e.message || "Could not create.";
+    error.value = e.message || "Could not save.";
   } finally {
     saving.value = "";
   }
