@@ -16,7 +16,7 @@
  * shells) and force-reload every open client — so a browser stuck on an old
  * cached copy of the app heals itself on its next visit.
  */
-var SW_VERSION = "mt-app-v2";
+var SW_VERSION = "mt-app-v3";
 var SHELL_CACHE = "midhunatech-shell-" + SW_VERSION;
 var OFFLINE_URL = "/midhunatech";
 
