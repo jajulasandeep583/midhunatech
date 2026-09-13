@@ -55,8 +55,9 @@ export const getCreateMeta = (doctype) =>
 export const searchLink = (doctype, txt) =>
   call("midhunatech.api.data.search_link", { doctype, txt });
 
-export const createDoc = (doctype, values) =>
-  callPost("midhunatech.api.data.create_doc", { doctype, values: JSON.stringify(values) });
+export const createDoc = (doctype, values, submit = 0) =>
+  callPost("midhunatech.api.data.create_doc",
+    { doctype, values: JSON.stringify(values), submit: submit ? 1 : 0 });
 
 export const getList = (doctype, { search, start, page_length, fields, filters } = {}) =>
   call("midhunatech.api.data.get_list", { doctype, search, start, page_length, fields, filters });

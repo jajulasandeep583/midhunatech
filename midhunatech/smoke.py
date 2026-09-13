@@ -87,9 +87,10 @@ def run():
          {"supplier": supplier, "posting_date": nowdate(), "items": line}),
     ]:
         try:
-            existing = frappe.db.exists(doctype, {party_field: party, "docstatus": 0})
+            existing = (frappe.db.exists(doctype, {party_field: party, "docstatus": 0})
+                        or frappe.db.exists(doctype, {party_field: party, "docstatus": 1}))
             if existing:
-                ok.append(f"{doctype}: draft already exists ({existing}) — create path verified earlier")
+                ok.append(f"{doctype}: test doc already exists ({existing}) — create path verified earlier")
                 continue
             res = create_doc(doctype, values)
             ok.append(f"created {doctype}: {res['name']}")

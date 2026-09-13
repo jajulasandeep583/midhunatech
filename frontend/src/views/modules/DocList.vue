@@ -568,8 +568,8 @@ onUnmounted(() => document.removeEventListener("visibilitychange", onVisibility)
 .dl-act:disabled { opacity: .55; }
 .dl-act.on { border-color: var(--ion-color-primary); color: var(--ion-color-primary);
   background: #eef2ff; }
-.dl-act.primary { background: var(--ion-color-primary); border-color: var(--ion-color-primary);
-  color: #fff; }
+.dl-act.primary { background: #4f46e5; border-color: #4f46e5;
+  color: #fff; font-weight: 800; box-shadow: 0 2px 8px rgba(79,70,229,.35); }
 
 .dl-email { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px;
   padding: 12px; margin-bottom: 14px; }

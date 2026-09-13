@@ -102,9 +102,15 @@
 
         <div v-if="error" class="df-error" role="alert">{{ error }}</div>
 
-        <button class="df-submit" :disabled="!canSubmit || saving" @click="submit">
-          <ion-spinner v-if="saving" name="crescent" style="width:18px;height:18px;" />
-          <span v-else>Create {{ doctype }}</span>
+        <button v-if="submittable" class="df-submit" :disabled="!canSubmit || !!saving"
+                @click="submit(true)">
+          <ion-spinner v-if="saving === 'submit'" name="crescent" style="width:18px;height:18px;" />
+          <span v-else>✓ Create &amp; Submit</span>
+        </button>
+        <button class="df-submit" :class="{ 'df-secondary': submittable }"
+                :disabled="!canSubmit || !!saving" @click="submit(false)">
+          <ion-spinner v-if="saving === 'draft'" name="crescent" style="width:18px;height:18px;" />
+          <span v-else>{{ submittable ? "Save as Draft" : `Create ${doctype}` }}</span>
         </button>
       </template>
     </ion-content>
@@ -127,7 +133,8 @@ const props = defineProps({
 const emit = defineEmits(["close", "created"]);
 
 const loading = ref(false);
-const saving = ref(false);
+const saving = ref("");           // "" | "draft" | "submit"
+const submittable = ref(false);
 const error = ref(null);
 const notCreatable = ref(null);
 const fields = ref([]);
@@ -156,6 +163,7 @@ watch(() => props.open, async (isOpen) => {
     const meta = await getCreateMeta(props.doctype);
     if (!meta.creatable) { notCreatable.value = meta.reason; return; }
     fields.value = meta.fields;
+    submittable.value = !!meta.submittable;
     for (const f of meta.fields) {
       form[f.fieldname] = f.fieldtype === "Check" ? (Number(f.default) ? 1 : 0) : (f.default || "");
     }
@@ -211,25 +219,29 @@ const canSubmit = computed(() => {
   return true;
 });
 
-async function submit() {
-  saving.value = true;
+async function submit(alsoSubmit = false) {
+  saving.value = alsoSubmit ? "submit" : "draft";
   error.value = null;
   try {
     const payload = { ...form };
     if (child.value) payload[child.value.fieldname] = rows.value.map(r => ({ ...r }));
-    const res = await createDoc(props.doctype, payload);
+    const res = await createDoc(props.doctype, payload, alsoSubmit ? 1 : 0);
     emit("created", res.name);
     emit("close");
   } catch (e) {
     error.value = e.message || "Could not create.";
   } finally {
-    saving.value = false;
+    saving.value = "";
   }
 }
 </script>
 
 <style scoped>
 .df-title { font-size: 16px; font-weight: 800; }
+.df-secondary {
+  background: #fff !important; color: #475569 !important;
+  border: 1.5px solid #d8dee9 !important; margin-top: 10px;
+}
 .df-center { display: flex; flex-direction: column; align-items: center; padding: 50px 20px; color: #64748b; }
 .df-note-ico { font-size: 38px; margin-bottom: 10px; }
 .df-note p { text-align: center; font-size: 14px; }

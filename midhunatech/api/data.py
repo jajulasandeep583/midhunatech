@@ -374,8 +374,32 @@ def get_view(doctype, label=None, fields=None, filters=None):
         "can_create":   _can_create_native(doctype, meta),
         "can_print":    int(bool(frappe.has_permission(doctype, "print"))),
         "can_email":    int(bool(frappe.has_permission(doctype, "email"))),
-        "cards":        _cards(doctype, meta, status_field, date_field, base),
+        "cards":        (_account_cards() if doctype == "Account"
+                         else _cards(doctype, meta, status_field, date_field, base)),
     }
+
+
+def _account_cards():
+    """Chart of Accounts header: one card per root type with its net balance
+    (Asset/Expense shown as debit balances, Liability/Income/Equity as credit)."""
+    from frappe.utils import flt
+    rows = dict(frappe.db.sql(
+        """select a.root_type, sum(g.debit) - sum(g.credit)
+           from `tabGL Entry` g
+           join `tabAccount` a on g.account = a.name
+           where g.is_cancelled = 0
+           group by a.root_type"""))
+    cur = _company_currency()
+    cards = []
+    for root, color in (("Asset", "#0ea5e9"), ("Liability", "#f59e0b"),
+                        ("Income", "#22c55e"), ("Expense", "#ec4899"),
+                        ("Equity", "#8b5cf6")):
+        net = flt(rows.get(root, 0))
+        if root in ("Liability", "Income", "Equity"):
+            net = -net
+        cards.append({"label": _(root), "value": fmt_money(net, currency=cur),
+                      "color": color})
+    return cards
 
 
 # Doctypes whose required line-item table the native create form CAN handle.
@@ -781,6 +805,16 @@ def get_doc(doctype, name, fields=None):
                                r.status or ""] for r in recent],
             })
 
+    # Transactional docs: show the billing / shipping address on the sheet
+    if not scalars:
+        for fn, label in (("address_display", _("Address")),
+                          ("shipping_address", _("Shipping Address"))):
+            val = meta.has_field(fn) and doc.get(fn)
+            if val and not any(f["label"] == label for f in result["fields"]):
+                result["fields"].append({"label": label,
+                                         "value": _clean_text(str(val)),
+                                         "fieldtype": "Small Text"})
+
     # Item detail: available stock up top + warehouse-wise breakup table
     if doctype == "Item" and doc.get("is_stock_item"):
         from frappe.utils import flt
@@ -949,7 +983,8 @@ def get_create_meta(doctype):
         for fn, label, ftype in _PARTY_EXTRA_FIELDS:
             fields.append({"fieldname": fn, "label": _(label), "fieldtype": ftype,
                            "options": "", "reqd": 0, "default": ""})
-        return {"creatable": True, "doctype": doctype, "fields": fields, "child": None}
+        return {"creatable": True, "doctype": doctype, "fields": fields,
+                "child": None, "submittable": 0}
     meta = frappe.get_meta(doctype)
     perm = _permitted_fields(meta, "write")
 
@@ -984,7 +1019,9 @@ def get_create_meta(doctype):
             if f["fieldname"] in spec.get("parent_reqd", ()):
                 f["reqd"] = 1
 
-    return {"creatable": True, "doctype": doctype, "fields": fields, "child": child}
+    return {"creatable": True, "doctype": doctype, "fields": fields, "child": child,
+            "submittable": int(bool(meta.is_submittable
+                                    and frappe.has_permission(doctype, "submit")))}
 
 
 @frappe.whitelist()
@@ -1008,10 +1045,11 @@ def search_link(doctype, txt="", page_length=10):
 
 
 @frappe.whitelist()
-def create_doc(doctype, values):
+def create_doc(doctype, values, submit=0):
     """Create a record from the native form (permissions + validations enforced).
     `values` may include a list under the supported child fieldname
-    (e.g. Material Request "items") — rows are filtered the same way."""
+    (e.g. Material Request "items") — rows are filtered the same way.
+    `submit=1` also submits the new document (Create & Submit)."""
     if isinstance(values, str):
         values = frappe.parse_json(values)
     if not frappe.has_permission(doctype, "create"):
@@ -1061,12 +1099,15 @@ def create_doc(doctype, values):
 
     doc.insert()
 
+    if frappe.utils.cint(submit) and doc.meta.is_submittable:
+        doc.submit()
+
     warning = None
     if doctype in _PARTY_FORM:
         warning = _create_party_extras(doc, values or {})
 
     frappe.db.commit()
-    out = {"name": doc.name}
+    out = {"name": doc.name, "docstatus": doc.docstatus}
     if warning:
         out["warning"] = warning
     return out
