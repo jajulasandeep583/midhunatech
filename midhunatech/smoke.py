@@ -265,6 +265,43 @@ def run():
         frappe.db.rollback()
         fail.append(f"record_payment: {frappe.get_traceback().splitlines()[-1]}")
 
+    # ── GST taxes auto-applied on a B2B invoice (probe draft, then removed) ──
+    try:
+        r = create_doc("Sales Invoice", {
+            "customer": gst_cust, "posting_date": nowdate(),
+            "items": [{"item_code": item, "qty": 1, "rate": 100}],
+        })
+        si = frappe.get_doc("Sales Invoice", r["name"])
+        assert si.taxes and si.total_taxes_and_charges > 0, \
+            f"taxes={len(si.taxes)} amount={si.total_taxes_and_charges}"
+        tax = si.total_taxes_and_charges
+        si.delete()
+        frappe.db.commit()
+        ok.append(f"GST auto-applied on B2B invoice (tax {tax} on 100)")
+    except Exception:
+        frappe.db.rollback()
+        fail.append(f"GST taxes: {frappe.get_traceback().splitlines()[-1]}")
+
+    # ── cancel → amend → resubmit cycle ──
+    try:
+        from midhunatech.api.data import cancel_doc, amend_doc
+        amended = frappe.get_all("Quotation", filters={"amended_from": ("is", "set")},
+                                 limit_page_length=1, pluck="name")
+        if amended:
+            ok.append(f"cancel/amend verified earlier ({amended[0]})")
+        else:
+            q = frappe.get_all("Quotation", filters={"party_name": customer,
+                               "docstatus": 1}, limit_page_length=1, pluck="name")
+            assert q, "no submitted quotation to cancel"
+            cancel_doc("Quotation", q[0])
+            r = amend_doc("Quotation", q[0])
+            r2 = submit_doc("Quotation", r["name"])
+            assert r2["docstatus"] == 1
+            ok.append(f"cancelled {q[0]} → amended {r['name']} → resubmitted")
+    except Exception:
+        frappe.db.rollback()
+        fail.append(f"cancel/amend: {frappe.get_traceback().splitlines()[-1]}")
+
     # ── curated Payments form: Receive from customer via Mode of Payment ──
     try:
         ref = "MT-SMOKE-PAY"

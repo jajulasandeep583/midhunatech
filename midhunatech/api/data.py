@@ -759,6 +759,10 @@ def get_doc(doctype, name, fields=None):
         "can_einvoice": _einvoice_available(doc),
         "can_ewaybill": _ewaybill_available(doc),
         "can_pay": _can_pay(doc),
+        "can_cancel": int(bool(doc.docstatus == 1
+                               and frappe.has_permission(doctype, "cancel", doc=doc))),
+        "can_amend": int(bool(doc.docstatus == 2 and meta.is_submittable
+                              and frappe.has_permission(doctype, "create"))),
         "fields": out_fields,
         "tables": _detail_tables(meta, doc, table_spec, doctype),
     }
@@ -804,6 +808,18 @@ def get_doc(doctype, name, fields=None):
                                fmt_money(r.outstanding_amount, currency=cur),
                                r.status or ""] for r in recent],
             })
+
+    # Transactional docs: totals breakdown (net + taxes) when taxed
+    if not scalars and doc.get("taxes"):
+        from frappe.utils import flt
+        cur = doc.get("currency") or _company_currency()
+        for fn, label in (("net_total", _("Net Total")),
+                          ("total_taxes_and_charges", _("Total Tax"))):
+            if meta.has_field(fn) and not any(f["label"] == label
+                                              for f in result["fields"]):
+                result["fields"].append({"label": label,
+                                         "value": fmt_money(flt(doc.get(fn)), currency=cur),
+                                         "fieldtype": "Currency"})
 
     # Transactional docs: show the billing / shipping address on the sheet
     if not scalars:
@@ -1131,6 +1147,9 @@ def create_doc(doctype, values, submit=0):
     if doctype in _PARTY_FORM:
         _apply_party_gstin(doc, (values or {}).get("_gstin"))
 
+    _set_gst_tax_category(doc)
+    _apply_taxes_template(doc)
+
     rows = (values or {}).get(child_field) if child_field else None
     if child_field and rows:
         cmeta = frappe.get_meta(meta.get_field(child_field).options)
@@ -1160,6 +1179,92 @@ def create_doc(doctype, values, submit=0):
     if warning:
         out["warning"] = warning
     return out
+
+
+_TAXABLE_DOCTYPES = {
+    "Quotation", "Sales Order", "Sales Invoice", "Delivery Note",
+    "Purchase Order", "Purchase Invoice", "Purchase Receipt",
+}
+
+
+def _party_state(party_type, party):
+    """Party's GST state — from their GSTIN first, else their address."""
+    gstin = frappe.db.get_value(party_type, party, "gstin") \
+        if frappe.get_meta(party_type).has_field("gstin") else None
+    if gstin and _GST_STATES.get(gstin[:2]):
+        return _GST_STATES[gstin[:2]]
+    links = frappe.get_all("Dynamic Link", filters={
+        "link_doctype": party_type, "link_name": party, "parenttype": "Address",
+    }, pluck="parent")
+    if links:
+        rows = frappe.get_all("Address", filters={"name": ("in", links)},
+                              fields=["state"],
+                              order_by="is_primary_address desc", limit_page_length=1)
+        if rows:
+            return rows[0].state
+    return None
+
+
+def _set_gst_tax_category(doc):
+    """India: derive In-State / Out-State on app-created documents so
+    ERPNext auto-applies the matching GST taxes template (CGST+SGST vs
+    IGST) during set_missing_values. No-op when tax categories are absent
+    (non-India site), a category is already set, or taxes were provided."""
+    if doc.doctype not in _TAXABLE_DOCTYPES or doc.get("tax_category") \
+            or doc.get("taxes") or not doc.meta.has_field("tax_category"):
+        return
+    if not frappe.db.exists("Tax Category", "In-State"):
+        return
+
+    company_gstin = (frappe.get_cached_value("Company", doc.company, "gstin")
+                     if doc.get("company")
+                     and frappe.get_meta("Company").has_field("gstin") else None)
+    company_state = _GST_STATES.get((company_gstin or "")[:2])
+
+    party_type, party = None, None
+    if doc.get("customer"):
+        party_type, party = "Customer", doc.customer
+    elif doc.get("supplier"):
+        party_type, party = "Supplier", doc.supplier
+    elif doc.doctype == "Quotation" and doc.get("party_name"):
+        party_type, party = (doc.get("quotation_to") or "Customer"), doc.party_name
+    pstate = _party_state(party_type, party) if (party_type == "Customer"
+              or party_type == "Supplier") and party else None
+
+    if company_state and pstate:
+        doc.tax_category = "In-State" if company_state == pstate else "Out-State"
+    else:
+        doc.tax_category = "In-State"   # local trade is the MSME default
+
+
+def _apply_taxes_template(doc):
+    """Copy the tax rows from the taxes template matching the document's
+    tax category (fallback: the default template). The desk does this from
+    a client script, so server-side creates must do it themselves."""
+    if doc.doctype not in _TAXABLE_DOCTYPES or doc.get("taxes"):
+        return
+    if not doc.meta.has_field("taxes_and_charges") or not doc.get("company"):
+        return
+    master = ("Sales Taxes and Charges Template"
+              if doc.doctype in ("Quotation", "Sales Order", "Sales Invoice",
+                                 "Delivery Note")
+              else "Purchase Taxes and Charges Template")
+    tname = None
+    if doc.get("tax_category"):
+        tname = frappe.db.get_value(master, {"company": doc.company, "disabled": 0,
+                                             "tax_category": doc.tax_category})
+    if not tname:
+        tname = frappe.db.get_value(master, {"company": doc.company, "disabled": 0,
+                                             "is_default": 1})
+    if not tname:
+        return
+    try:
+        from erpnext.controllers.accounts_controller import get_taxes_and_charges
+        doc.taxes_and_charges = tname
+        for row in get_taxes_and_charges(master, tname) or []:
+            doc.append("taxes", row)
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "midhunatech: taxes template")
 
 
 def _apply_party_gstin(doc, gstin):
@@ -1424,6 +1529,33 @@ def record_payment(doctype, name, amount=None, posting_date=None,
     pe.submit()
     frappe.db.commit()
     return {"name": pe.name}
+
+
+@frappe.whitelist()
+def cancel_doc(doctype, name):
+    """Cancel a submitted document (reverses its GL/stock effects)."""
+    doc = frappe.get_doc(doctype, name)
+    doc.cancel()
+    frappe.db.commit()
+    return {"name": doc.name, "docstatus": doc.docstatus}
+
+
+@frappe.whitelist()
+def amend_doc(doctype, name):
+    """Amend a cancelled document — returns the new editable draft copy."""
+    src = frappe.get_doc(doctype, name)
+    src.check_permission("read")
+    if src.docstatus != 2:
+        frappe.throw(_("Only a cancelled document can be amended"))
+    if not frappe.has_permission(doctype, "create"):
+        frappe.throw(_("You are not permitted to create {0}").format(doctype),
+                     frappe.PermissionError)
+    new = frappe.copy_doc(src)
+    new.amended_from = name
+    new.docstatus = 0
+    new.insert()
+    frappe.db.commit()
+    return {"name": new.name}
 
 
 @frappe.whitelist()

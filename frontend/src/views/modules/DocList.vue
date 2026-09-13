@@ -110,6 +110,12 @@
               <button v-if="view.can_print" class="dl-act" @click="openPdf">📄 PDF</button>
               <button v-if="view.can_email" class="dl-act" :class="{ on: emailOpen }"
                       @click="emailOpen = !emailOpen">✉️ Email</button>
+              <button v-if="detail.can_cancel" class="dl-act danger" :disabled="acting"
+                      @click="doCancel">
+                {{ acting === "cancel" ? "Cancelling…" : (confirmCancel ? "Tap again to confirm" : "✕ Cancel") }}
+              </button>
+              <button v-if="detail.can_amend" class="dl-act primary" :disabled="acting"
+                      @click="doAmend">{{ acting === "amend" ? "Amending…" : "✎ Amend" }}</button>
             </div>
           </div>
 
@@ -206,8 +212,8 @@ import {
   IonButtons, IonContent, IonSpinner, IonToast,
 } from "@ionic/vue";
 import {
-  getView, getList, getDoc, emailDoc, submitDoc, generateEinvoice,
-  generateEwaybill, getPaymentMeta, recordPayment, badgeClass,
+  getView, getList, getDoc, emailDoc, submitDoc, cancelDoc, amendDoc,
+  generateEinvoice, generateEwaybill, getPaymentMeta, recordPayment, badgeClass,
 } from "@/data/docdata.js";
 
 const NUM_COL_TYPES = new Set(["Currency", "Float", "Int", "Percent"]);
@@ -325,6 +331,45 @@ async function doSubmit() {
   } catch (e) {
     actErr.value = true;
     actNote.value = e.message || "Could not submit.";
+  } finally {
+    acting.value = "";
+  }
+}
+
+const confirmCancel = ref(false);
+async function doCancel() {
+  if (!confirmCancel.value) {
+    confirmCancel.value = true;
+    setTimeout(() => { confirmCancel.value = false; }, 4000);
+    return;
+  }
+  confirmCancel.value = false;
+  acting.value = "cancel";
+  actNote.value = ""; actErr.value = false;
+  try {
+    await cancelDoc(props.doctype, detail.value.name);
+    toast.value = `${detail.value.name} cancelled`;
+    detail.value = await getDoc(props.doctype, detail.value.name, props.fields);
+    softRefresh();
+  } catch (e) {
+    actErr.value = true;
+    actNote.value = e.message || "Could not cancel.";
+  } finally {
+    acting.value = "";
+  }
+}
+
+async function doAmend() {
+  acting.value = "amend";
+  actNote.value = ""; actErr.value = false;
+  try {
+    const r = await amendDoc(props.doctype, detail.value.name);
+    toast.value = `Amended as ${r.name}`;
+    softRefresh();
+    open({ name: r.name, title: r.name });
+  } catch (e) {
+    actErr.value = true;
+    actNote.value = e.message || "Could not amend.";
   } finally {
     acting.value = "";
   }
@@ -573,6 +618,7 @@ onUnmounted(() => document.removeEventListener("visibilitychange", onVisibility)
   background: #eef2ff; }
 .dl-act.primary { background: #4f46e5; border-color: #4f46e5;
   color: #fff; font-weight: 800; box-shadow: 0 2px 8px rgba(79,70,229,.35); }
+.dl-act.danger { border-color: #fecaca; color: #dc2626; background: #fef2f2; }
 
 .dl-email { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px;
   padding: 12px; margin-bottom: 14px; }

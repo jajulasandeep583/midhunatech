@@ -71,6 +71,12 @@ export const emailDoc = (doctype, name, recipients, message) =>
 export const submitDoc = (doctype, name) =>
   callPost("midhunatech.api.data.submit_doc", { doctype, name });
 
+export const cancelDoc = (doctype, name) =>
+  callPost("midhunatech.api.data.cancel_doc", { doctype, name });
+
+export const amendDoc = (doctype, name) =>
+  callPost("midhunatech.api.data.amend_doc", { doctype, name });
+
 export const generateEinvoice = (name) =>
   callPost("midhunatech.api.data.generate_einvoice", { name });
 

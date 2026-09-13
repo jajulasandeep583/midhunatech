@@ -102,15 +102,16 @@
 
         <div v-if="error" class="df-error" role="alert">{{ error }}</div>
 
-        <button v-if="submittable" class="df-submit" :disabled="!canSubmit || !!saving"
-                @click="submit(true)">
-          <ion-spinner v-if="saving === 'submit'" name="crescent" style="width:18px;height:18px;" />
-          <span v-else>✓ Create &amp; Submit</span>
+        <!-- the ONE action lives at the bottom where the thumb goes; the
+             draft escape hatch is a small link so nobody taps it by habit -->
+        <button v-if="submittable" class="df-draft-link" :disabled="!canSubmit || !!saving"
+                @click="submit(false)">
+          {{ saving === "draft" ? "Saving draft…" : "save as draft instead" }}
         </button>
-        <button class="df-submit" :class="{ 'df-secondary': submittable }"
-                :disabled="!canSubmit || !!saving" @click="submit(false)">
-          <ion-spinner v-if="saving === 'draft'" name="crescent" style="width:18px;height:18px;" />
-          <span v-else>{{ submittable ? "Save as Draft" : `Create ${doctype}` }}</span>
+        <button class="df-submit" :disabled="!canSubmit || !!saving"
+                @click="submit(submittable)">
+          <ion-spinner v-if="saving" name="crescent" style="width:18px;height:18px;" />
+          <span v-else>{{ submittable ? "✓ Create & Submit" : `Create ${doctype}` }}</span>
         </button>
       </template>
     </ion-content>
@@ -238,10 +239,12 @@ async function submit(alsoSubmit = false) {
 
 <style scoped>
 .df-title { font-size: 16px; font-weight: 800; }
-.df-secondary {
-  background: #fff !important; color: #475569 !important;
-  border: 1.5px solid #d8dee9 !important; margin-top: 10px;
+.df-draft-link {
+  display: block; width: 100%; background: none; border: none;
+  color: #64748b; font-size: 13px; font-weight: 600; text-decoration: underline;
+  cursor: pointer; padding: 6px; margin-bottom: 4px; -webkit-appearance: none;
 }
+.df-draft-link:disabled { opacity: .5; }
 .df-center { display: flex; flex-direction: column; align-items: center; padding: 50px 20px; color: #64748b; }
 .df-note-ico { font-size: 38px; margin-bottom: 10px; }
 .df-note p { text-align: center; font-size: 14px; }
