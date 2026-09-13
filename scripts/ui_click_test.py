@@ -1,5 +1,8 @@
-"""Real UI click regression test — logs in through the app's own PWA login
-screen and performs every lifecycle action with genuine taps.
+"""Real-finger UI regression test on an emulated phone.
+
+Runs the complete SALES INVOICE lifecycle the way a user does — every step
+is a touch tap, native confirm dialogs are accepted like a person tapping
+OK — then checks the action buttons of every other tile.
 
     MT_BASE=http://dev.localhost:8000 ~/pwtest/bin/python scripts/ui_click_test.py
 """
@@ -9,6 +12,8 @@ import sys
 from playwright.sync_api import sync_playwright
 
 BASE = os.environ.get("MT_BASE", "http://dev.localhost:8000")
+CUSTOMER = "MT Test Customer"
+ITEM = "MT-TEST-ITEM"
 results = []
 
 
@@ -20,10 +25,10 @@ def check(label, ok, detail=""):
 
 with sync_playwright() as p:
     browser = p.chromium.launch(channel="chromium")
-    # A real phone: touch events, mobile viewport — synthetic mouse clicks
-    # hide bugs that a finger hits (e.g. a dialog rendered off-screen).
-    ctx = browser.new_context(**p.devices["Pixel 5"])
+    ctx = browser.new_context(**p.devices["Pixel 5"])   # touch + mobile viewport
     page = ctx.new_page()
+    dialogs = []
+    page.on("dialog", lambda d: (dialogs.append(d.message.split("\n")[0]), d.accept()))
 
     # ── login through the app's own screen ──
     page.goto(f"{BASE}/midhunatech", wait_until="domcontentloaded")
@@ -31,7 +36,7 @@ with sync_playwright() as p:
     if page.get_by_text("Sign in to continue").count():
         page.locator("input").first.fill("Administrator")
         page.fill("input[type=password]", "admin")
-        page.get_by_role("button", name="Sign in").click()
+        page.get_by_role("button", name="Sign in").tap()
         page.wait_for_timeout(5000)
     check("login via the PWA login screen",
           not page.get_by_text("Sign in to continue").count())
@@ -40,118 +45,99 @@ with sync_playwright() as p:
         page.goto(f"{BASE}/midhunatech/module/{slug}", wait_until="domcontentloaded")
         page.wait_for_timeout(3500)
 
-    def open_card(has_text=None, index=0):
-        loc = page.locator(".dl-item", has_text=has_text) if has_text else page.locator(".dl-item")
-        if not loc.count():
-            return False
-        loc.nth(index).tap()
-        page.wait_for_timeout(3000)
-        return True
-
     def buttons():
         b = page.locator(".dl-act")
         return [b.nth(i).inner_text() for i in range(b.count())]
 
-    def tap(label):
-        """Tap with a finger — and only if the button is really on screen."""
+    def tap(label, wait=6000):
         b = page.locator(".dl-act", has_text=label)
         if not b.count():
             return False
         b.first.tap()
-        page.wait_for_timeout(1200)
+        page.wait_for_timeout(wait)
         return True
-
-    def dialog_visible():
-        """The confirm button must be visible AND inside the viewport — a
-        dialog trapped in a transformed container renders off-screen."""
-        y = page.locator(".dl-confirm-yes")
-        if not y.count() or not y.first.is_visible():
-            return False, "not visible"
-        box = y.first.bounding_box()
-        vp = page.viewport_size
-        if not box:
-            return False, "no box"
-        on = (0 <= box["y"] <= vp["height"] - 10) and (0 <= box["x"] <= vp["width"] - 10)
-        return on, f"at x={int(box['x'])},y={int(box['y'])} viewport {vp['width']}x{vp['height']}"
-
-    def confirm_yes():
-        y = page.locator(".dl-confirm-yes")
-        if not y.count():
-            return False
-        y.tap()
-        page.wait_for_timeout(6000)
-        return True
-
-    def close_sheet():
-        c = page.get_by_role("button", name="Close")
-        if c.count():
-            c.first.click()
-            page.wait_for_timeout(1200)
 
     def chip():
         c = page.locator(".dl-badge")
         return c.first.inner_text() if c.count() else "(none)"
 
-    # ── 1. CREATE + SUBMIT a quotation with real taps ──
-    open_list("quotation")
+    def pick_link(locator, value):
+        locator.fill(value)
+        page.wait_for_timeout(1500)
+        opts = page.locator(".df-link-list li")
+        if opts.count():
+            opts.first.tap()
+            page.wait_for_timeout(500)
+
+    # ══ SALES INVOICE — the full lifecycle, by touch ══
+    open_list("sales_invoice")
     page.locator(".dl-fab").tap()
     page.wait_for_timeout(3500)
-    page.locator(".df-link input").first.fill("MT Test Customer")
-    page.wait_for_timeout(1500)
-    opt = page.locator(".df-link-list li")
-    if opt.count():
-        opt.first.click()
-    page.wait_for_timeout(600)
-    # line item: item_code + qty
-    item_inputs = page.locator(".df-item-card .df-link input")
-    if item_inputs.count():
-        item_inputs.first.fill("MT-TEST-ITEM")
-        page.wait_for_timeout(1500)
-        o2 = page.locator(".df-link-list li")
-        if o2.count():
-            o2.first.click()
-    qty = page.locator(".df-item-card input[type=number]")
-    if qty.count():
-        qty.first.fill("3")
+    pick_link(page.locator(".df-link input").first, CUSTOMER)
+    item_input = page.locator(".df-item-card .df-link input")
+    if item_input.count():
+        pick_link(item_input.first, ITEM)
+    nums = page.locator(".df-item-card input[type=number]")
+    if nums.count() >= 1:
+        nums.nth(0).fill("4")          # qty
+    if nums.count() >= 2:
+        nums.nth(1).fill("250")        # rate
     page.wait_for_timeout(400)
-    page.locator(".df-submit").tap()         # ✓ Create & Submit
-    page.wait_for_timeout(8000)
-    created_ok = page.locator(".dl-detail-title").count() > 0
-    check("create + submit a quotation by tapping the form", created_ok,
-          f"status {chip()}" if created_ok else "sheet did not open")
+    page.locator(".df-submit").tap()   # ✓ Create & Submit
+    page.wait_for_timeout(9000)
+    opened = page.locator(".dl-detail-title").count() > 0
+    inv = page.locator(".dl-detail-title").first.inner_text() if opened else ""
+    check("Sales Invoice: created AND submitted by tapping the form",
+          opened and chip() in ("Unpaid", "Overdue"), f"{inv} status {chip()}")
 
-    # ── 2. CANCEL it (dialog) ──
-    if created_ok:
-        tapped = tap("Cancel")
-        on_screen, where = dialog_visible()
-        check("Cancel dialog appears ON SCREEN after a finger tap",
-              tapped and on_screen, where)
-        confirm_yes()
-        check("Cancel completes", chip() == "Cancelled", f"status {chip()}")
+    # payment (partial) — outstanding should drop, status -> Partly Paid
+    if opened:
+        tap("Payment", 2500)
+        amt = page.locator(".dl-email input[type=number]")
+        if amt.count():
+            amt.first.fill("100")
+        page.locator(".dl-email-send").tap()
+        page.wait_for_timeout(8000)
+        check("Sales Invoice: payment recorded by tapping",
+              chip() in ("Partly Paid", "Paid"), f"status {chip()}")
 
-        # ── 3. AMEND it ──
-        tapped = tap("Amend")
-        page.wait_for_timeout(6000)
+        # cancel — native dialog must appear and the doc must end Cancelled
+        before = len(dialogs)
+        tapped = tap("Cancel", 8000)
+        check("Sales Invoice: Cancel asks for confirmation",
+              tapped and len(dialogs) > before,
+              dialogs[-1] if dialogs else "no dialog appeared")
+        check("Sales Invoice: cancelled", chip() == "Cancelled", f"status {chip()}")
+
+        # amend -> editable draft
+        tapped = tap("Amend", 8000)
         after = buttons()
-        check("Amend creates an editable draft", tapped and "✓ Submit" in " ".join(after),
-              ", ".join(after))
+        check("Sales Invoice: amended into an editable draft",
+              tapped and "✓ Submit" in " ".join(after), ", ".join(after))
 
-        # ── 4. DELETE the amended draft (dialog) ──
-        tapped = tap("Delete")
-        on_screen, where = dialog_visible()
-        check("Delete dialog appears ON SCREEN after a finger tap",
-              tapped and on_screen, where)
-        confirm_yes()
-        check("Delete closes the sheet", page.locator(".dl-detail-title").count() == 0)
+        # delete the amended draft
+        before = len(dialogs)
+        tapped = tap("Delete", 8000)
+        check("Sales Invoice: Delete asks for confirmation",
+              tapped and len(dialogs) > before,
+              dialogs[-1] if len(dialogs) > before else "no dialog appeared")
+        check("Sales Invoice: draft deleted (sheet closed)",
+              page.locator(".dl-detail-title").count() == 0)
 
-    # ── 5. every tile: buttons render for the first record ──
-    for slug in ("items", "customers", "suppliers", "sales_order", "sales_invoice",
+    # ══ every other tile: buttons present for its first record ══
+    for slug in ("items", "customers", "suppliers", "quotation", "sales_order",
                  "purchase_invoice", "payments", "journal_entry", "accounts"):
         open_list(slug)
-        if open_card():
+        cards = page.locator(".dl-item")
+        if cards.count():
+            cards.first.tap()
+            page.wait_for_timeout(3000)
             b = buttons()
             check(f"{slug}: action buttons render", len(b) >= 3, ", ".join(b))
-            close_sheet()
+            c = page.get_by_role("button", name="Close")
+            if c.count():
+                c.first.tap()
+                page.wait_for_timeout(1000)
         else:
             check(f"{slug}: list has records", False, "no cards")
 

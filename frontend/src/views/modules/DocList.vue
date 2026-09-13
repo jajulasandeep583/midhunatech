@@ -195,22 +195,6 @@
       </ion-content>
     </ion-modal>
 
-    <!-- ── confirmation dialog (cancel / delete) ──
-         Teleported to <body>: inside the sheet it sits in a transformed,
-         scrolling container, which traps position:fixed and pushes the
-         dialog off-screen on phones. -->
-    <Teleport to="body">
-      <div v-if="confirm.open" class="dl-confirm-back" @click.self="confirm.open = false">
-        <div class="dl-confirm" role="dialog" aria-modal="true">
-          <div class="dl-confirm-title">{{ confirm.header }}</div>
-          <div class="dl-confirm-msg">{{ confirm.message }}</div>
-          <div class="dl-confirm-btns">
-            <button class="dl-confirm-no" @click="confirm.open = false">No, keep it</button>
-            <button class="dl-confirm-yes" @click="runConfirm">{{ confirm.yes }}</button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
 
     <!-- ── Floating "+" create button ── -->
     <button v-if="view.can_create" class="dl-fab" :aria-label="`New ${view.label}`"
@@ -339,7 +323,6 @@ async function open(row) {
   emailOpen.value = false; emailNote.value = ""; emailErr.value = false;
   actNote.value = ""; actErr.value = false;
   payOpen.value = false; payModes.value = []; payMode.value = ""; payRef.value = "";
-  confirm.open = false;
   detail.value = { title: row.title, status: row.badge, fields: [] };
   try {
     detail.value = await getDoc(props.doctype, row.name, props.fields);
@@ -372,25 +355,22 @@ async function doSubmit() {
   }
 }
 
-// One clear confirmation dialog for destructive actions. (The old
-// "tap again to confirm" pattern read as a dead button on mobile.)
-const confirm = reactive({ open: false, header: "", message: "", yes: "", run: null });
-
-function askConfirm(header, message, yes, run) {
-  Object.assign(confirm, { open: true, header, message, yes, run });
-}
-function runConfirm() {
-  const fn = confirm.run;
-  confirm.open = false;
-  if (fn) fn();
+// Destructive actions confirm with the BROWSER's own dialog. A custom
+// in-page dialog kept rendering off-screen inside the sheet on phones; the
+// native one is drawn by the OS and cannot be clipped or mispositioned.
+function askConfirm(message) {
+  try {
+    return window.confirm(message);
+  } catch {
+    return true;   // no dialog available — don't block the action
+  }
 }
 
 function doCancel() {
-  askConfirm(
-    "Cancel this document?",
-    `${detail.value.name} will be cancelled and its accounting entries reversed. `
-      + "You can amend it afterwards to make a corrected copy.",
-    "Yes, cancel it", runCancel);
+  if (!askConfirm(`Cancel ${detail.value.name}?\n\n`
+      + "Its accounting entries will be reversed. You can amend it "
+      + "afterwards to make a corrected copy.")) return;
+  runCancel();
 }
 
 async function runCancel() {
@@ -410,10 +390,9 @@ async function runCancel() {
 }
 
 function doDelete() {
-  askConfirm(
-    "Delete this document?",
-    `${detail.value.name} will be permanently deleted. This cannot be undone.`,
-    "Yes, delete it", runDelete);
+  if (!askConfirm(`Delete ${detail.value.name}?\n\n`
+      + "This cannot be undone.")) return;
+  runDelete();
 }
 
 async function runDelete() {
@@ -697,26 +676,6 @@ onUnmounted(() => document.removeEventListener("visibilitychange", onVisibility)
   color: #fff; font-weight: 800; box-shadow: 0 2px 8px rgba(79,70,229,.35); }
 .dl-act.danger { border-color: #fecaca; color: #dc2626; background: #fef2f2; }
 
-/* confirmation dialog */
-.dl-confirm-back {
-  position: fixed; inset: 0; z-index: 99999;
-  background: rgba(15, 23, 42, .45);
-  display: flex; align-items: center; justify-content: center; padding: 24px;
-}
-.dl-confirm {
-  width: 100%; max-width: 340px; background: #fff; border-radius: 18px;
-  padding: 20px; box-shadow: 0 20px 50px rgba(15, 23, 42, .3);
-}
-.dl-confirm-title { font-size: 17px; font-weight: 800; color: #0f172a; }
-.dl-confirm-msg { font-size: 13.5px; color: #475569; margin-top: 8px; line-height: 1.5; }
-.dl-confirm-btns { display: flex; gap: 10px; margin-top: 18px; }
-.dl-confirm-no, .dl-confirm-yes {
-  flex: 1; height: 46px; border-radius: 12px; font-size: 14.5px; font-weight: 700;
-  cursor: pointer; -webkit-appearance: none;
-}
-.dl-confirm-no { background: #fff; border: 1.5px solid #d8dee9; color: #475569; }
-.dl-confirm-yes { background: #dc2626; border: none; color: #fff; }
-.dl-confirm-yes:active, .dl-confirm-no:active { transform: scale(.97); }
 
 .dl-email { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px;
   padding: 12px; margin-bottom: 14px; }
