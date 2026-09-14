@@ -790,6 +790,7 @@ def get_doc(doctype, name, fields=None):
                              and doctype not in _PARTY_FORM
                              and doctype not in ("Payment Entry", "Journal Entry")
                              and frappe.has_permission(doctype, "write", doc=doc))),
+        "print_formats": _print_formats(doctype, meta),
         "fields": out_fields,
         "tables": _detail_tables(meta, doc, table_spec, doctype),
     }
@@ -1394,6 +1395,19 @@ def _create_party_extras(doc, values):
         return _("Saved, but {0} — you can add it from the desk later.").format(
             _(" and ").join(problems))
     return None
+
+
+def _print_formats(doctype, meta):
+    """Enabled print formats for the doctype, default first. The list the
+    app offers next to Print / PDF."""
+    default = meta.default_print_format or "Standard"
+    names = frappe.get_all("Print Format",
+                           filters={"doc_type": doctype, "disabled": 0},
+                           pluck="name", order_by="name asc")
+    ordered = [default] + [n for n in names if n != default]
+    if "Standard" not in ordered:
+        ordered.append("Standard")
+    return ordered
 
 
 def _einvoice_available(doc):

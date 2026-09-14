@@ -1,0 +1,16 @@
+{%- from "midhunatech/templates/print/msme_macros.html" import styles, header, party, items, totals, bank_and_sign with context -%}
+{{ styles() }}
+<div class="msme">
+  {{ header(doc, "QUOTATION", [
+      ("Quotation No", doc.name),
+      ("Date", frappe.utils.formatdate(doc.transaction_date)),
+      ("Valid Till", frappe.utils.formatdate(doc.valid_till) if doc.valid_till else ""),
+  ]) }}
+  {{ party(doc, "Quotation For") }}
+  {{ items(doc, True) }}
+  {{ totals(doc) }}
+  {{ bank_and_sign(doc, False) }}
+  <div class="foot">
+    {% if doc.valid_till %}Prices are valid until {{ frappe.utils.formatdate(doc.valid_till) }}. {% endif %}We look forward to your order.
+  </div>
+</div>

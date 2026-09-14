@@ -59,6 +59,11 @@ def after_install():
     except Exception:
         frappe.log_error(frappe.get_traceback(), "midhunatech: seed_default_notifications failed")
 
+    try:
+        set_default_print_formats()
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "midhunatech: set_default_print_formats failed")
+
     frappe.msgprint(
         "Midhunatech PWA installed and configured. Open /midhunatech on your phone, "
         "or manage tiles at /app/midhunatech-pwa-config.",
@@ -85,6 +90,36 @@ def after_migrate():
         drop_checkin_doctype()
     except Exception:
         frappe.log_error(frappe.get_traceback(), "midhunatech: drop_checkin_doctype failed")
+
+    try:
+        set_default_print_formats()
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "midhunatech: set_default_print_formats failed")
+
+
+# doctype -> print format shipped with this app (midhunatech/print_format/)
+DEFAULT_PRINT_FORMATS = {
+    "Sales Invoice": "MSME Tax Invoice",
+    "Quotation":     "MSME Quotation",
+}
+
+
+def set_default_print_formats():
+    """Make the MSME formats the default for their doctypes (Print, PDF and
+    Email all use the default). Idempotent; skipped if the format is missing."""
+    from frappe.custom.doctype.property_setter.property_setter import make_property_setter
+
+    for doctype, fmt in DEFAULT_PRINT_FORMATS.items():
+        if not frappe.db.exists("Print Format", fmt):
+            continue
+        current = frappe.db.get_value("Property Setter", {
+            "doc_type": doctype, "property": "default_print_format"}, "value")
+        if current == fmt:
+            continue
+        make_property_setter(doctype, None, "default_print_format", fmt, "Data",
+                             for_doctype=True)
+        print(f"default print format: {doctype} -> {fmt}")
+    frappe.db.commit()
 
 
 def drop_checkin_doctype():

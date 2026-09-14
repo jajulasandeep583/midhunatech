@@ -125,6 +125,14 @@
             </div>
           </div>
 
+          <!-- print format used by Print / PDF -->
+          <div v-if="view.can_print && (detail.print_formats || []).length > 1" class="dl-pf">
+            <label class="dl-mini-lbl" for="dl-pf-sel">Print format</label>
+            <select id="dl-pf-sel" v-model="printFormat" class="dl-email-input">
+              <option v-for="f in detail.print_formats" :key="f" :value="f">{{ f }}</option>
+            </select>
+          </div>
+
           <div v-if="actNote" class="dl-email-note" :class="{ err: actErr }"
                style="margin-bottom:10px;" role="alert">{{ actNote }}</div>
 
@@ -326,6 +334,7 @@ async function open(row) {
   detail.value = { title: row.title, status: row.badge, fields: [] };
   try {
     detail.value = await getDoc(props.doctype, row.name, props.fields);
+    printFormat.value = (detail.value.print_formats || [])[0] || "";
   } catch (e) {
     detail.value = { title: row.title, status: row.badge,
       fields: [{ label: "Error", value: e.message }] };
@@ -403,9 +412,19 @@ async function doAmend() {
   actNote.value = ""; actErr.value = false;
   try {
     const r = await amendDoc(props.doctype, detail.value.name);
-    toast.value = `Amended as ${r.name}`;
+    toast.value = `Amended as ${r.name} — make your changes`;
     softRefresh();
-    open({ name: r.name, title: r.name });
+    // Amend exists to change the document, so go straight to the edit form
+    // (fields, items, taxes). Doctypes without an edit form open the sheet.
+    const fresh = await getDoc(props.doctype, r.name, props.fields);
+    if (fresh.can_edit) {
+      editName.value = r.name;
+      detail.value = null;
+      showForm.value = true;
+    } else {
+      detail.value = fresh;
+      printFormat.value = (fresh.print_formats || [])[0] || "";
+    }
   } catch (e) {
     actErr.value = true;
     actNote.value = e.message || "Could not amend.";
@@ -492,8 +511,16 @@ const emailSending = ref(false);
 const emailNote = ref("");
 const emailErr = ref(false);
 
+const printFormat = ref("");
+
 function docUrlParams() {
-  return `doctype=${encodeURIComponent(props.doctype)}&name=${encodeURIComponent(detail.value?.name || "")}`;
+  let q = `doctype=${encodeURIComponent(props.doctype)}&name=${encodeURIComponent(detail.value?.name || "")}`;
+  if (printFormat.value) {
+    q += `&format=${encodeURIComponent(printFormat.value)}`;
+    // the MSME formats draw their own company header — skip the letterhead
+    if (printFormat.value.startsWith("MSME ")) q += "&no_letterhead=1";
+  }
+  return q;
 }
 function openUrl(url) {
   // window.open is silently blocked in some embedded/in-app browsers —
@@ -681,6 +708,8 @@ onUnmounted(() => document.removeEventListener("visibilitychange", onVisibility)
 .dl-email-note.err { color: #dc2626; }
 .dl-mini-lbl { display: block; font-size: 11.5px; font-weight: 700; color: #64748b;
   margin: 2px 2px 4px; }
+.dl-pf { margin: 0 0 12px; }
+.dl-pf .dl-email-input { margin-bottom: 0; }
 
 .dl-fieldgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
 .dl-field { padding: 10px 0; border-bottom: 1px solid #f1f5f9; min-width: 0; }

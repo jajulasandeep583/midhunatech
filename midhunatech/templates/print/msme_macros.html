@@ -1,0 +1,201 @@
+{#- Shared building blocks for the MSME print formats.
+    Layout uses tables only: PDFs are rendered by wkhtmltopdf, whose old
+    WebKit engine does not support flexbox or grid. -#}
+
+{% macro styles() %}
+<style>
+  .msme { font-size: 11px; color: #111; line-height: 1.35; }
+  .msme table { width: 100%; border-collapse: collapse; }
+  .msme td, .msme th { vertical-align: top; }
+  .msme .co-name { font-size: 18px; font-weight: 700; margin-bottom: 2px; }
+  .msme .muted { color: #555; }
+  .msme .doc-title { font-size: 17px; font-weight: 700; letter-spacing: 1.5px; text-align: right; }
+  .msme .meta td { padding: 1px 0; }
+  .msme .meta .k { color: #555; text-align: right; padding-right: 8px; white-space: nowrap; }
+  .msme .meta .v { text-align: right; font-weight: 600; white-space: nowrap; width: 1%; }
+  .msme .rule { border-top: 2px solid #111; margin: 8px 0 10px; }
+  .msme .party td { border: 1px solid #bbb; padding: 7px 9px; width: 50%; }
+  .msme .lbl { font-size: 9.5px; font-weight: 700; text-transform: uppercase; color: #555; letter-spacing: .6px; margin-bottom: 3px; }
+  .msme .pname { font-size: 12.5px; font-weight: 700; }
+  .msme .items { margin-top: 10px; }
+  .msme .items th { background: #eee; border: 1px solid #999; padding: 5px 6px; font-size: 10px;
+    text-align: left; color: #111 !important; font-weight: 700 !important; }
+  .msme .items td { border: 1px solid #bbb; padding: 5px 6px; }
+  .msme .num { text-align: right; white-space: nowrap; }
+  .msme .ctr { text-align: center; }
+  .msme .tot td { padding: 3px 6px; }
+  .msme .tot .k { text-align: right; color: #333; }
+  .msme .tot .v { text-align: right; width: 32%; white-space: nowrap; }
+  .msme .grand td { border-top: 2px solid #111; font-size: 13px; font-weight: 700; padding-top: 6px; }
+  .msme .words { margin-top: 8px; padding: 6px 9px; border: 1px solid #bbb; }
+  .msme .small { font-size: 9.5px; }
+  .msme .sign { text-align: right; padding-top: 34px; }
+  .msme .foot { margin-top: 14px; text-align: center; font-size: 9px; color: #777; }
+  .msme .qr img { width: 110px; height: 110px; }
+</style>
+{% endmacro %}
+
+
+{% macro header(doc, title, rows) %}
+{% set company = frappe.get_cached_doc("Company", doc.company) %}
+<table class="hdr">
+  <tr>
+    <td style="width: 60%;">
+      {% if company.company_logo %}
+        <img src="{{ company.company_logo }}" style="max-height: 55px; max-width: 180px; margin-bottom: 4px;"><br>
+      {% endif %}
+      <div class="co-name">{{ company.company_name }}</div>
+      {% if doc.get("company_address_display") %}
+        <div class="muted">{{ doc.company_address_display }}</div>
+      {% endif %}
+      {% if doc.get("company_gstin") %}<div><b>GSTIN:</b> {{ doc.company_gstin }}</div>{% endif %}
+      {% if company.phone_no or company.email %}
+        <div class="muted">
+          {% if company.phone_no %}Ph: {{ company.phone_no }}{% endif %}
+          {% if company.phone_no and company.email %} · {% endif %}
+          {% if company.email %}{{ company.email }}{% endif %}
+        </div>
+      {% endif %}
+    </td>
+    <td style="width: 40%;">
+      <div class="doc-title">{{ title }}</div>
+      <table class="meta" style="margin-top: 6px;">
+        {% for k, v in rows %}
+          {% if v %}<tr><td class="k">{{ k }}</td><td class="v">{{ v }}</td></tr>{% endif %}
+        {% endfor %}
+      </table>
+    </td>
+  </tr>
+</table>
+<div class="rule"></div>
+{% endmacro %}
+
+
+{% macro party(doc, heading) %}
+{% set pname = doc.get("customer_name") or doc.get("party_name") or doc.get("supplier_name") %}
+<table class="party">
+  <tr>
+    <td>
+      <div class="lbl">{{ heading }}</div>
+      <div class="pname">{{ pname }}</div>
+      {% if doc.get("address_display") %}<div>{{ doc.address_display }}</div>{% endif %}
+      {% if doc.get("billing_address_gstin") %}<div><b>GSTIN:</b> {{ doc.billing_address_gstin }}</div>{% endif %}
+      {% if doc.get("contact_mobile") %}<div>Ph: {{ doc.contact_mobile }}</div>{% endif %}
+    </td>
+    <td>
+      {% if doc.get("shipping_address") and doc.get("shipping_address_name") != doc.get("customer_address") %}
+        <div class="lbl">Ship To</div>
+        <div>{{ doc.shipping_address }}</div>
+      {% endif %}
+      {% if doc.get("place_of_supply") %}
+        <div class="lbl" style="margin-top: 4px;">Place of Supply</div>
+        <div>{{ doc.place_of_supply }}</div>
+      {% endif %}
+      {% if doc.get("po_no") %}
+        <div class="lbl" style="margin-top: 4px;">Customer PO</div>
+        <div>{{ doc.po_no }}{% if doc.get("po_date") %} · {{ frappe.utils.formatdate(doc.po_date) }}{% endif %}</div>
+      {% endif %}
+    </td>
+  </tr>
+</table>
+{% endmacro %}
+
+
+{% macro items(doc, show_hsn=True) %}
+<table class="items">
+  <thead>
+    <tr>
+      <th class="ctr" style="width: 4%;">#</th>
+      <th>Item</th>
+      {% if show_hsn %}<th style="width: 11%;">HSN/SAC</th>{% endif %}
+      <th class="num" style="width: 9%;">Qty</th>
+      <th class="num" style="width: 14%;">Rate</th>
+      <th class="num" style="width: 16%;">Amount</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in doc.items %}
+    <tr>
+      <td class="ctr">{{ loop.index }}</td>
+      <td>
+        <b>{{ row.item_name }}</b>
+        {% if row.description and frappe.utils.strip_html(row.description) != row.item_name %}
+          <div class="small muted">{{ frappe.utils.strip_html(row.description) }}</div>
+        {% endif %}
+      </td>
+      {% if show_hsn %}<td>{{ row.get("gst_hsn_code") or "" }}</td>{% endif %}
+      <td class="num">{{ "%g" | format(row.qty or 0) }} {{ row.uom or "" }}</td>
+      <td class="num">{{ row.get_formatted("rate", doc) }}</td>
+      <td class="num">{{ row.get_formatted("amount", doc) }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endmacro %}
+
+
+{% macro totals(doc) %}
+<table style="margin-top: 8px;">
+  <tr>
+    <td style="width: 55%; padding-right: 12px;">
+      {% if doc.get("in_words") %}
+        <div class="words">
+          <div class="lbl">Amount in words</div>
+          <div><b>{{ doc.in_words }}</b></div>
+        </div>
+      {% endif %}
+    </td>
+    <td style="width: 45%;">
+      <table class="tot">
+        <tr><td class="k">Net Total</td><td class="v">{{ doc.get_formatted("net_total") }}</td></tr>
+        {% if doc.get("discount_amount") %}
+          <tr><td class="k">Discount</td><td class="v">- {{ doc.get_formatted("discount_amount") }}</td></tr>
+        {% endif %}
+        {% for t in doc.get("taxes") or [] %}
+          {% if t.tax_amount %}
+          <tr>
+            <td class="k">{{ t.description }}{% if t.rate %} @ {{ "%g" | format(t.rate) }}%{% endif %}</td>
+            <td class="v">{{ t.get_formatted("tax_amount", doc) }}</td>
+          </tr>
+          {% endif %}
+        {% endfor %}
+        {% if doc.get("rounding_adjustment") %}
+          <tr><td class="k">Rounding</td><td class="v">{{ doc.get_formatted("rounding_adjustment") }}</td></tr>
+        {% endif %}
+        <tr class="grand">
+          <td class="k">Grand Total</td>
+          <td class="v">{{ doc.get_formatted("rounded_total") if doc.get("rounded_total") else doc.get_formatted("grand_total") }}</td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+{% endmacro %}
+
+
+{% macro bank_and_sign(doc, show_bank=True) %}
+{% set bank = frappe.db.get_value("Bank Account",
+    {"is_company_account": 1, "company": doc.company},
+    ["bank", "bank_account_no", "branch_code", "account_name"], as_dict=True) if show_bank else None %}
+<table style="margin-top: 12px;">
+  <tr>
+    <td style="width: 55%;">
+      {% if bank %}
+        <div class="lbl">Bank Details</div>
+        <div>{{ bank.bank }}</div>
+        {% if bank.bank_account_no %}<div>A/c No: <b>{{ bank.bank_account_no }}</b></div>{% endif %}
+        {% if bank.branch_code %}<div>IFSC: <b>{{ bank.branch_code }}</b></div>{% endif %}
+      {% endif %}
+      {% if doc.get("terms") %}
+        <div class="lbl" style="margin-top: 8px;">Terms &amp; Conditions</div>
+        <div class="small">{{ doc.terms }}</div>
+      {% endif %}
+    </td>
+    <td class="sign" style="width: 45%;">
+      For <b>{{ frappe.db.get_value("Company", doc.company, "company_name") }}</b>
+      <br><br><br>
+      Authorised Signatory
+    </td>
+  </tr>
+</table>
+{% endmacro %}

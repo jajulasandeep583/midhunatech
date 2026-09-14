@@ -86,9 +86,27 @@ with sync_playwright() as p:
     page.locator(".df-submit").tap()   # ✓ Create & Submit
     page.wait_for_timeout(9000)
     opened = page.locator(".dl-detail-title").count() > 0
-    inv = page.locator(".dl-detail-title").first.inner_text() if opened else ""
+    latest = page.request.get(
+        f"{BASE}/api/method/frappe.client.get_list?doctype=Sales%20Invoice"
+        "&order_by=creation%20desc&limit_page_length=1").json().get("message") or [{}]
+    inv = latest[0].get("name", "")
     check("Sales Invoice: created AND submitted by tapping the form",
           opened and chip() in ("Unpaid", "Overdue"), f"{inv} status {chip()}")
+
+    # print format picker + a real PDF through the logged-in session
+    if opened:
+        sel = page.locator("#dl-pf-sel")
+        opts = [o for o in sel.locator("option").all_inner_texts()] if sel.count() else []
+        check("Sales Invoice: print format picker offers the MSME formats",
+              "MSME Tax Invoice" in opts and "MSME Simple Invoice" in opts,
+              ", ".join(opts[:4]))
+        resp = page.request.get(
+            f"{BASE}/api/method/frappe.utils.print_format.download_pdf"
+            f"?doctype=Sales%20Invoice&name={inv}&format=MSME%20Tax%20Invoice&no_letterhead=1")
+        body = resp.body()
+        check("Sales Invoice: PDF downloads in the MSME Tax Invoice format",
+              resp.status == 200 and body[:4] == b"%PDF",
+              f"HTTP {resp.status}, {len(body)//1024} KB")
 
     # payment (partial) — outstanding should drop, status -> Partly Paid
     if opened:
@@ -106,11 +124,27 @@ with sync_playwright() as p:
         check("Sales Invoice: cancelled with one tap",
               tapped and chip() == "Cancelled", f"status {chip()}")
 
-        # amend -> editable draft
-        tapped = tap("Amend", 8000)
-        after = buttons()
-        check("Sales Invoice: amended into an editable draft",
-              tapped and "✓ Submit" in " ".join(after), ", ".join(after))
+        # amend -> the EDIT FORM opens straight away, prefilled
+        tapped = tap("Amend", 9000)
+        form_title = page.locator(".df-title")
+        title_txt = form_title.first.inner_text() if form_title.count() else "(no form)"
+        check("Sales Invoice: Amend opens the edit form directly",
+              tapped and title_txt.startswith("Edit"), title_txt)
+        qty = page.locator(".df-item-card input[type=number]")
+        prefilled = qty.first.input_value() if qty.count() else ""
+        check("Sales Invoice: amended form is prefilled with the items",
+              prefilled == "4", f"qty field = {prefilled!r}")
+
+        # change the qty and keep it as a draft
+        if qty.count():
+            qty.first.fill("6")
+        draft = page.locator(".df-draft-link")
+        if draft.count():
+            draft.first.tap()
+            page.wait_for_timeout(8000)
+        check("Sales Invoice: amended draft saved and reopened",
+              page.locator(".dl-detail-title").count() > 0 and chip() == "Draft",
+              f"status {chip()}")
 
         # delete the amended draft — one tap
         tapped = tap("Delete", 8000)
